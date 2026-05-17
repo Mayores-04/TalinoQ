@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "TalinoQ",
-    "slug": "TalinoQ",
+    "slug": "talinoq-051726",
     "version": "1.0.0",
 
     "web": {
@@ -13,14 +13,20 @@
     },
 
     "plugins": [],
+    "extra": {
+      "firebaseProjectId": "talinoq-051726",
+      "firebaseProjectNumber": "441985791475",
+      "firebaseAndroidAppId": "1:441985791475:android:6c52ce51a209cacd5fce86"
+    },
 
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/LightModeStandAloneAppIcon.png",
+    "scheme": "talinoq",
 
     "userInterfaceStyle": "light",
 
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/LightModeAppLogo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -29,8 +35,10 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.company.TalinoQ",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/LightModeStandAloneAppIcon.png",
         "backgroundColor": "#ffffff"
       }
     }

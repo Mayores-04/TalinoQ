@@ -1,0 +1,18 @@
+{
+  "name": "talinoq-ai-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "lint": "node --check src/index.js",
+    "secret:groq": "wrangler secret put GROQ_API_KEY"
+  },
+  "dependencies": {
+    "groq-sdk": "^1.2.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.18.0"
+  }
+}

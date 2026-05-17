@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "talinoq-ai-mentor",
+  "main": "src/index.js",
+  "compatibility_date": "2025-12-01",
+  "workers_dev": true,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "talinoq-051726",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "env": {
+    "production": {
+      "routes": [
+        {
+          "pattern": "talinoq-ai-mentor.jakemayores05.workers.dev",
+          "zone_name": "jakemayores05.workers.dev",
+        },
+      ],
+    },
+  },
+}
