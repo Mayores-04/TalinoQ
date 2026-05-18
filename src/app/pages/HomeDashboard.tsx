@@ -6,6 +6,7 @@ import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
 import { subscribeToReviewers, type ReviewerRecord } from '@/lib/reviewers';
+import { buildStudyAnalytics, type StudyAnalytics } from '@/lib/studyAnalytics';
 
 type HomeDashboardProps = {
   userName?: string;
@@ -27,6 +28,7 @@ export function HomeDashboard({
   const initialLoading = useSkeletonLoading();
   const { refreshing, refresh } = usePullToRefresh();
   const [recentReviewers, setRecentReviewers] = useState<ReviewerRecord[]>([]);
+  const [analytics, setAnalytics] = useState<StudyAnalytics>(() => buildStudyAnalytics([]));
   const [reviewersLoading, setReviewersLoading] = useState(true);
   const isLoading = initialLoading || refreshing || reviewersLoading;
 
@@ -34,10 +36,12 @@ export function HomeDashboard({
     return subscribeToReviewers(
       (reviewers) => {
         setRecentReviewers(reviewers.slice(0, 2));
+        setAnalytics(buildStudyAnalytics(reviewers));
         setReviewersLoading(false);
       },
       () => {
         setRecentReviewers([]);
+        setAnalytics(buildStudyAnalytics([]));
         setReviewersLoading(false);
       }
     );
@@ -62,7 +66,11 @@ export function HomeDashboard({
           <>
             <View style={styles.header}>
               <Text style={styles.title}>Welcome back, {userName}</Text>
-              <Text style={styles.subtitle}>You&apos;re on a 12-day study streak. Keep it up!</Text>
+              <Text style={styles.subtitle}>
+                {analytics.studyStreak > 0
+                  ? `You're on a ${analytics.studyStreak}-day study streak. Keep it up!`
+                  : 'Create or update a reviewer today to start your study streak.'}
+              </Text>
             </View>
 
             <View style={styles.quickActions}>
@@ -104,10 +112,13 @@ export function HomeDashboard({
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
                 <Text style={styles.statLabel}>EXAM READINESS</Text>
-                <Text style={styles.statValue}>82%</Text>
-                <Text style={styles.statStatus}>Great Progress</Text>
+                <Text style={styles.statValue}>{analytics.examReadiness}%</Text>
+                <Text style={styles.statStatus}>
+                  {analytics.examReadiness >= 80 ? 'Great Progress' : 'Needs Focus'}
+                </Text>
                 <Text style={styles.statDescription}>
-                  Based on your last 3 mock exams and reviewer progress.
+                  Based on {analytics.reviewerCount} saved reviewer
+                  {analytics.reviewerCount === 1 ? '' : 's'} and subject mastery.
                 </Text>
               </View>
 
@@ -118,24 +129,33 @@ export function HomeDashboard({
                 </View>
 
                 <View style={styles.chartRow}>
-                  <View style={[styles.chartBar, { height: 25, backgroundColor: '#dbeafe' }]} />
-                  <View style={[styles.chartBar, { height: 48, backgroundColor: '#99f6e4' }]} />
-                  <View style={[styles.chartBar, { height: 66, backgroundColor: '#064e4a' }]} />
-                  <View style={[styles.chartBar, { height: 37, backgroundColor: '#d9f99d' }]} />
-                  <View style={[styles.chartBar, { height: 55, backgroundColor: '#4ade80' }]} />
+                  {analytics.weeklyActivity.slice(1).map((day, index) => (
+                    <View
+                      key={`${day.label}-${index}`}
+                      style={[
+                        styles.chartBar,
+                        {
+                          height: Math.max(12, Math.round(day.value * 0.66)),
+                          backgroundColor: getActivityColor(day.value),
+                        },
+                      ]}
+                    />
+                  ))}
                 </View>
 
                 <View style={styles.daysRow}>
-                  {['M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+                  {analytics.weeklyActivity.slice(1).map((day, index) => (
                     <Text key={`${day}-${index}`} style={styles.dayText}>
-                      {day}
+                      {day.label}
                     </Text>
                   ))}
                 </View>
 
                 <View style={styles.streakBadge}>
-                  <Text style={styles.streakTitle}>12 Day Streak</Text>
-                  <Text style={styles.streakSubtitle}>Top 5% of scholars this month</Text>
+                  <Text style={styles.streakTitle}>{analytics.studyStreak} Day Streak</Text>
+                  <Text style={styles.streakSubtitle}>
+                    {analytics.totalItems} items - {analytics.totalQuestions} AI questions
+                  </Text>
                 </View>
               </View>
             </View>
@@ -174,14 +194,32 @@ export function HomeDashboard({
 
               <Text style={styles.weakSubtitle}>Focus on these to boost your readiness score.</Text>
 
-              <WeakTopicRow title="Protein Synthesis" percentage="45%" tone="danger" />
-              <WeakTopicRow title="Cell Respiration" percentage="52%" tone="warning" />
+              {analytics.weakSubjects.length > 0 ? (
+                analytics.weakSubjects
+                  .slice(0, 2)
+                  .map((subject, index) => (
+                    <WeakTopicRow
+                      key={subject.id}
+                      title={subject.name}
+                      percentage={`${subject.averageMastery}%`}
+                      tone={index === 0 ? 'danger' : 'warning'}
+                    />
+                  ))
+              ) : (
+                <Text style={styles.noWeakText}>
+                  No weak subjects yet. Keep building reviewers.
+                </Text>
+              )}
 
               <TouchableOpacity
                 style={styles.reviewNextButton}
                 activeOpacity={0.85}
                 onPress={onOpenWeakTopics}>
-                <Text style={styles.reviewNextText}>Review Next 19th Century Laws</Text>
+                <Text style={styles.reviewNextText}>
+                  {analytics.weakSubjects[0]
+                    ? `Review ${analytics.weakSubjects[0].name}`
+                    : 'Open Progress'}
+                </Text>
               </TouchableOpacity>
             </View>
           </>
@@ -241,7 +279,7 @@ function ReviewerCard({ reviewer }: { reviewer: ReviewerRecord }) {
 
       <Text style={styles.reviewerTitle}>{reviewer.title}</Text>
       <Text style={styles.reviewerDetails}>
-        {reviewer.estimatedItems} items • {reviewer.category}
+        {reviewer.estimatedItems} items - {reviewer.category}
       </Text>
 
       <View style={styles.progressRow}>
@@ -269,6 +307,22 @@ function getReviewerAccent(reviewer: ReviewerRecord) {
   }
 
   return reviewer.difficulty === 'Easy' ? '#4ade80' : '#99f6e4';
+}
+
+function getActivityColor(value: number) {
+  if (value >= 80) {
+    return '#064e4a';
+  }
+
+  if (value >= 45) {
+    return '#99f6e4';
+  }
+
+  if (value > 0) {
+    return '#d9f99d';
+  }
+
+  return '#dbeafe';
 }
 
 function formatUpdatedAt(reviewer: ReviewerRecord) {
@@ -685,6 +739,13 @@ const styles = StyleSheet.create({
     color: '#064e4a',
     fontSize: 12,
     fontWeight: '800',
+  },
+  noWeakText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    paddingVertical: 10,
   },
   flexSkeleton: {
     flex: 1,

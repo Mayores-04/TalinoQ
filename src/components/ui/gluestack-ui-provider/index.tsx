@@ -20,7 +20,6 @@ export function GluestackUIProvider({ children, mode = 'light' }: GluestackUIPro
       // avoid throwing so the app can continue to load. The view below uses
       // `dark:` classes so pages still render when darkMode is enabled.
       // Silently ignore and let CSS/system handle the color scheme.
-      // eslint-disable-next-line no-console
       console.warn('setColorScheme unavailable or failed:', e);
     }
   }, [mode, setColorScheme]);

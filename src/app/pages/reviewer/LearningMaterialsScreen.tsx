@@ -28,17 +28,24 @@ import {
   saveLearningMaterialFileRecord,
   saveLearningMaterialLink,
   subscribeToLearningMaterials,
+  updateLearningMaterial,
   type FileMaterialKind,
   type MaterialPreview,
 } from '../../../lib/learningMaterials';
+import { extractPickedMaterialText } from '@/lib/materialExtraction';
+import { extractPdfTextFromRemote } from '@/lib/pdfExtraction';
 import { FlowHeader } from './reviewerCommon';
 import { styles } from './reviewerStyles';
 
 export default function LearningMaterialsScreen({
+  libraryId,
+  libraryName,
   onBack,
   onMaterialRemoved,
   onMaterialSaved,
 }: {
+  libraryId?: string | null;
+  libraryName?: string | null;
   onBack: () => void;
   onMaterialRemoved?: (materialId: string) => void;
   onMaterialSaved?: (materialId: string) => void;
@@ -88,6 +95,7 @@ export default function LearningMaterialsScreen({
     kind,
     title,
     subtitle,
+    fileSize,
   }: {
     uri: string;
     fileName: string;
@@ -95,26 +103,65 @@ export default function LearningMaterialsScreen({
     kind: FileMaterialKind;
     title: string;
     subtitle: string;
+    fileSize?: number;
   }) => {
     const id = `${kind}-${Date.now()}`;
     pushMaterial({ id, kind, title, subtitle, status: 'Uploading', uri });
     setBusy(true);
     try {
+      const extraction = await extractPickedMaterialText({
+        uri,
+        name: fileName,
+        mimeType: contentType,
+        size: fileSize,
+      });
+      updateMaterial(id, {
+        status: extraction.extractedText ? 'Processing' : 'Uploading',
+        subtitle: 'Reading material',
+      });
       const savedMaterial = await saveLearningMaterialFileRecord({
         kind,
         title,
         fileName,
         localUri: uri,
         contentType,
+        fileSize,
+        extractedText: extraction.extractedText,
+        libraryId,
+        libraryName,
       });
+      const remoteExtraction =
+        extraction.sourceType === 'pdf' && !extraction.extractedText
+          ? await extractPdfTextFromRemote(savedMaterial.remoteUrl)
+          : null;
+      const extractedText = remoteExtraction?.text || extraction.extractedText;
+      const extractionMessage =
+        remoteExtraction?.text
+          ? 'I extracted readable text from this PDF.'
+          : remoteExtraction?.warning || extraction.extractionMessage;
+
+      if (remoteExtraction) {
+        await updateLearningMaterial(savedMaterial.id, {
+          extractedText,
+          status: extractedText ? 'Ready' : 'Saved',
+        });
+      }
+
       onMaterialSaved?.(savedMaterial.id);
       updateMaterial(id, {
+        extractedText,
         previewUri: savedMaterial.remoteUrl,
         remoteUrl: savedMaterial.remoteUrl,
-        status: 'Saved',
-        subtitle: 'Saved to Cloudinary',
+        sourceType: extraction.sourceType,
+        status: extractedText ? 'Ready' : (savedMaterial.status ?? 'Saved'),
+        subtitle: extractionMessage,
       });
-      Alert.alert('Material added', 'Your learning material is saved to Cloudinary.');
+      Alert.alert(
+        'Material added',
+        extractedText
+          ? 'Your learning material is saved and readable by TalinoQ AI.'
+          : extractionMessage
+      );
     } catch (error: any) {
       updateMaterial(id, { status: 'Failed', subtitle: 'Upload failed' });
       throw error;
@@ -144,6 +191,7 @@ export default function LearningMaterialsScreen({
         uri: asset.uri,
         fileName: asset.name ?? 'document',
         contentType: asset.mimeType,
+        fileSize: asset.size,
         kind: 'document',
         title: asset.name ?? 'Document',
         subtitle: 'Document preview',
@@ -175,6 +223,7 @@ export default function LearningMaterialsScreen({
         uri: asset.uri,
         fileName: asset.fileName ?? `image-${Date.now()}.jpg`,
         contentType: asset.mimeType,
+        fileSize: asset.fileSize,
         kind: 'image',
         title: asset.fileName ?? 'Image',
         subtitle: 'Gallery preview',
@@ -206,6 +255,7 @@ export default function LearningMaterialsScreen({
         uri: asset.uri,
         fileName: asset.fileName ?? `camera-${Date.now()}.jpg`,
         contentType: asset.mimeType,
+        fileSize: asset.fileSize,
         kind: 'camera',
         title: asset.fileName ?? 'Camera capture',
         subtitle: 'Camera preview',
@@ -226,7 +276,12 @@ export default function LearningMaterialsScreen({
 
     setBusy(true);
     try {
-      const savedMaterial = await saveLearningMaterialLink(trimmedTitle || trimmedUrl, trimmedUrl);
+      const savedMaterial = await saveLearningMaterialLink(
+        trimmedTitle || trimmedUrl,
+        trimmedUrl,
+        libraryId,
+        libraryName
+      );
       onMaterialSaved?.(savedMaterial.id);
       pushMaterial({
         id: `link-${Date.now()}`,
@@ -503,8 +558,10 @@ function SwipeableMaterialPreview({
         <View
           style={[
             styles.materialsPreviewStatus,
-            item.status === 'Saved' && styles.materialsPreviewStatusSaved,
-            item.status === 'Uploading' && styles.materialsPreviewStatusUploading,
+            (item.status === 'Saved' || item.status === 'Ready') &&
+              styles.materialsPreviewStatusSaved,
+            (item.status === 'Uploading' || item.status === 'Processing') &&
+              styles.materialsPreviewStatusUploading,
             item.status === 'Failed' && styles.materialsPreviewStatusFailed,
           ]}>
           <Text

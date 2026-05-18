@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
-import { AppChrome } from '@/components/app/AppChrome';
 import { AuthFlow, type AuthRoute } from '@/app/screens/AuthFlow';
 
 import './global.css';
@@ -14,9 +13,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <GluestackUIProvider mode="light">
-        <AppChrome currentRoute={route} onNavigate={setRoute}>
-          <AuthFlow route={route} setRoute={setRoute} />
-        </AppChrome>
+        <AuthFlow route={route} setRoute={setRoute} />
         <StatusBar style="dark" />
       </GluestackUIProvider>
     </SafeAreaProvider>

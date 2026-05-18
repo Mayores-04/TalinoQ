@@ -218,6 +218,9 @@ export const styles = StyleSheet.create({
     marginTop: 22,
     paddingVertical: 15,
   },
+  disabledButton: {
+    opacity: 0.62,
+  },
   primaryButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '900' },
   secondaryButton: {
     alignItems: 'center',
@@ -291,6 +294,13 @@ export const styles = StyleSheet.create({
   linkButtonTextSecondary: { color: '#172033' },
   busyRow: { alignItems: 'center', flexDirection: 'row', gap: 8, marginTop: 12 },
   busyText: { color: '#64748b', fontSize: 11, fontWeight: '700' },
+  inlineErrorText: {
+    color: '#b91c1c',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 18,
+    marginTop: 12,
+  },
 
   materialsPreviewCard: {
     backgroundColor: '#ffffff',

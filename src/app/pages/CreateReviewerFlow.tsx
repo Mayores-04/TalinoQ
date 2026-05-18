@@ -29,15 +29,27 @@ import {
 import SetupScreen from './reviewer/SetupScreen';
 import ExtractionScreen from './reviewer/ExtractionScreen';
 import LearningMaterialsScreen from './reviewer/LearningMaterialsScreen';
+import { subscribeToLibraries, type LibraryRecord } from '@/lib/libraries';
+import { fetchLearningMaterialsByIds, type MaterialPreview } from '@/lib/learningMaterials';
 import {
   createReviewer,
+  subscribeToReviewers,
+  updateReviewer,
   updateReviewerStatus,
   validateReviewerDraft,
   type ReviewerDifficulty,
   type ReviewerExportFormat,
+  type ReviewerQuestion,
   type ReviewerRecord,
   type ReviewerStatus,
 } from '@/lib/reviewers';
+import { generateReviewerQuestionsWithAi } from '@/lib/reviewerAi';
+import { ReviewerStudyPage, type ReviewerStudyMode } from '@/app/pages/reviewer/ReviewerStudyPage';
+import {
+  buildCalculatedStudyContext,
+  getCategorySuggestions,
+  getSubjectSuggestions,
+} from '@/lib/studyAnalytics';
 
 type CreateReviewerFlowProps = {
   onBack: () => void;
@@ -50,6 +62,18 @@ type CreateReviewerFlowProps = {
 type FlowStep = 'setup' | 'materials' | 'extracting' | 'questions' | 'export' | 'detail';
 type Difficulty = ReviewerDifficulty;
 type ExportFormat = ReviewerExportFormat;
+
+type ExtractionSummary = {
+  characterCount: number;
+  detectedSubject: string;
+  detectedTopics: string[];
+  materialCount: number;
+  materials: MaterialPreview[];
+  previewText: string;
+  readableCount: number;
+  sourceText: string;
+  warnings: string[];
+};
 
 type QuestionConfig = {
   id: string;
@@ -84,6 +108,16 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Please try again in a moment.';
 }
 
+function mergeSuggestion(suggestions: string[], currentValue: string) {
+  const cleanedValue = currentValue.trim();
+
+  if (!cleanedValue || suggestions.includes(cleanedValue)) {
+    return suggestions;
+  }
+
+  return [cleanedValue, ...suggestions].slice(0, 8);
+}
+
 export function CreateReviewerFlow({
   onBack,
   onOpenReviewers,
@@ -95,6 +129,11 @@ export function CreateReviewerFlow({
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState(categories[0]);
+  const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
+  const [libraries, setLibraries] = useState<LibraryRecord[]>([]);
+  const [savedReviewers, setSavedReviewers] = useState<ReviewerRecord[]>([]);
+  const [subjectSuggestions, setSubjectSuggestions] = useState<string[]>([]);
+  const [categorySuggestions, setCategorySuggestions] = useState(categories);
   const [difficulty, setDifficulty] = useState<Difficulty>('Medium');
   const [questions, setQuestions] = useState<QuestionConfig[]>(initialQuestions);
   const [format, setFormat] = useState<ExportFormat>('PDF');
@@ -103,16 +142,45 @@ export function CreateReviewerFlow({
   const [includeHeader, setIncludeHeader] = useState(true);
   const [theme, setTheme] = useState('Modern Academic');
   const [sourceMaterialIds, setSourceMaterialIds] = useState<string[]>([]);
+  const [generatedQuestions, setGeneratedQuestions] = useState<ReviewerQuestion[]>([]);
   const [createdReviewer, setCreatedReviewer] = useState<ReviewerRecord | null>(null);
+  const [studyReviewer, setStudyReviewer] = useState<ReviewerRecord | null>(null);
+  const [studyMode, setStudyMode] = useState<ReviewerStudyMode>('quiz');
+  const [extractionSummary, setExtractionSummary] = useState<ExtractionSummary | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const estimatedItems = useMemo(
     () => questions.reduce((total, item) => total + item.count, 0),
     [questions]
   );
+  const calculatedContext = useMemo(
+    () => buildCalculatedStudyContext(savedReviewers),
+    [savedReviewers]
+  );
+
+  React.useEffect(() => {
+    return subscribeToReviewers((reviewers) => {
+      setSavedReviewers(reviewers);
+      setSubjectSuggestions(getSubjectSuggestions(reviewers));
+      setCategorySuggestions(getCategorySuggestions(reviewers));
+    });
+  }, []);
+
+  React.useEffect(() => {
+    return subscribeToLibraries(setLibraries);
+  }, []);
+
+  const selectedLibrary = libraries.find((library) => library.id === selectedLibraryId) ?? null;
+  const effectiveSubject =
+    subject.trim() ||
+    extractionSummary?.detectedSubject ||
+    selectedLibrary?.name ||
+    'General Study';
   const reviewerTitle =
-    title.trim() || (subject.trim() ? `${subject.trim()} Reviewer` : 'Smart Reviewer');
+    title.trim() || (effectiveSubject ? `${effectiveSubject} Reviewer` : 'Smart Reviewer');
   const mastery =
     createdReviewer?.masteryScore ?? (difficulty === 'Hard' ? 76 : difficulty === 'Easy' ? 88 : 82);
   const exportSettings = useMemo(
@@ -128,11 +196,14 @@ export function CreateReviewerFlow({
 
   const buildReviewerInput = (status: ReviewerStatus = 'Ready') => ({
     title,
-    subject,
+    subject: effectiveSubject,
     category,
     difficulty,
     questionCounts: questions,
+    libraryId: selectedLibrary?.id ?? null,
+    libraryName: selectedLibrary?.name ?? null,
     sourceMaterialIds,
+    generatedQuestions,
     exportSettings,
     status,
   });
@@ -156,22 +227,64 @@ export function CreateReviewerFlow({
   };
 
   const handleGenerate = () => {
+    void prepareExtraction();
+  };
+
+  const prepareExtraction = async () => {
+    setStep('extracting');
+    setIsExtracting(true);
+    setSaveError(null);
+
     try {
-      validateReviewerDraft(buildReviewerInput());
-      setSaveError(null);
-      setStep('extracting');
+      const summary = await buildExtractionSummary({
+        currentSubject: subject,
+        materialIds: sourceMaterialIds,
+        selectedLibrary,
+      });
+      setExtractionSummary(summary);
+
+      if (!subject.trim() && summary.detectedSubject) {
+        setSubject(summary.detectedSubject);
+      }
+
+      validateReviewerDraft({
+        ...buildReviewerInput(),
+        subject: summary.detectedSubject || effectiveSubject,
+      });
     } catch (error) {
       const message = getErrorMessage(error);
       setSaveError(message);
-      Alert.alert('Check reviewer details', message);
+      Alert.alert('Check reviewer source', message);
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const generateAiQuestions = async () => {
+    setIsGenerating(true);
+    setSaveError(null);
+    setStep('questions');
+
+    try {
+      const aiQuestions = await generateReviewerQuestionsWithAi({
+        ...buildReviewerInput(),
+        title: reviewerTitle,
+        estimatedItems,
+        sourceContent: extractionSummary?.sourceText,
+        calculatedContext,
+      });
+      setGeneratedQuestions(aiQuestions);
+      setStep('questions');
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setSaveError(message);
+      Alert.alert('AI generation failed', message);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   const saveReviewer = async (status: ReviewerStatus = 'Ready') => {
-    if (createdReviewer) {
-      return createdReviewer;
-    }
-
     if (isSaving) {
       return createdReviewer;
     }
@@ -180,7 +293,13 @@ export function CreateReviewerFlow({
     setSaveError(null);
 
     try {
-      const reviewer = await createReviewer(buildReviewerInput(status));
+      const input = {
+        ...buildReviewerInput(status),
+        title: reviewerTitle,
+      };
+      const reviewer = createdReviewer
+        ? await updateReviewer(createdReviewer.id, input)
+        : await createReviewer(input);
       setCreatedReviewer(reviewer);
       return reviewer;
     } catch (error) {
@@ -243,6 +362,8 @@ export function CreateReviewerFlow({
   if (step === 'materials') {
     return (
       <LearningMaterialsScreen
+        libraryId={selectedLibrary?.id ?? null}
+        libraryName={selectedLibrary?.name ?? null}
         onBack={() => setStep('setup')}
         onMaterialRemoved={untrackSavedMaterial}
         onMaterialSaved={trackSavedMaterial}
@@ -250,15 +371,26 @@ export function CreateReviewerFlow({
     );
   }
 
+  if (studyReviewer) {
+    return (
+      <ReviewerStudyPage
+        initialMode={studyMode}
+        reviewer={studyReviewer}
+        onBack={() => setStudyReviewer(null)}
+      />
+    );
+  }
+
   if (step === 'extracting') {
     return (
       <ExtractionScreen
-        subject={subject}
+        errorMessage={saveError}
+        isExtracting={isExtracting}
         onBack={() => setStep('setup')}
-        onContinue={() => setStep('questions')}
-        onRescan={() =>
-          Alert.alert('Re-scan queued', 'TalinoQ will reprocess the source material.')
-        }
+        isGenerating={isGenerating}
+        summary={extractionSummary}
+        onContinue={generateAiQuestions}
+        onRescan={prepareExtraction}
       />
     );
   }
@@ -269,21 +401,17 @@ export function CreateReviewerFlow({
         category={category}
         difficulty={difficulty}
         estimatedItems={estimatedItems}
+        generatedQuestions={generatedQuestions}
+        extractionSummary={extractionSummary}
         reviewerTitle={reviewerTitle}
-        subject={subject}
+        subject={effectiveSubject}
         errorMessage={saveError}
+        isGenerating={isGenerating}
         isSaving={isSaving}
         onBack={() => setStep('extracting')}
         onExport={() => setStep('export')}
         onSave={handleSaveReviewer}
-        onRegenerate={() => {
-          setQuestions((current) =>
-            current.map((item) =>
-              item.id === 'multiple-choice' ? { ...item, count: item.count + 5 } : item
-            )
-          );
-          Alert.alert('Regenerated', 'TalinoQ added 5 new concept questions.');
-        }}
+        onRegenerate={generateAiQuestions}
       />
     );
   }
@@ -319,15 +447,24 @@ export function CreateReviewerFlow({
         category={category}
         mastery={mastery}
         reviewer={createdReviewer}
+        generatedQuestions={createdReviewer?.generatedQuestions ?? generatedQuestions}
         reviewerTitle={reviewerTitle}
-        subject={subject}
+        subject={effectiveSubject}
         onEdit={() => setStep('setup')}
         onExport={() => setStep('export')}
         onOpenAIChat={onOpenAIChat}
-        onStartQuiz={() => Alert.alert('Quiz ready', 'Starting your adaptive quiz session.')}
-        onStudyFlashcards={() =>
-          Alert.alert('Flashcards ready', 'Opening your active recall deck.')
-        }
+        onStartQuiz={() => {
+          if (createdReviewer) {
+            setStudyMode('quiz');
+            setStudyReviewer(createdReviewer);
+          }
+        }}
+        onStudyFlashcards={() => {
+          if (createdReviewer) {
+            setStudyMode('flashcards');
+            setStudyReviewer(createdReviewer);
+          }
+        }}
         onBack={onOpenReviewers}
       />
     );
@@ -336,14 +473,26 @@ export function CreateReviewerFlow({
   return (
     <SetupScreen
       category={category}
+      categories={mergeSuggestion(categorySuggestions, category)}
       difficulty={difficulty}
       estimatedItems={estimatedItems}
+      guidanceText={buildSetupGuidance(calculatedContext)}
+      libraries={libraries}
+      selectedLibraryId={selectedLibraryId}
       questions={questions}
       subject={subject}
+      subjects={mergeSuggestion(subjectSuggestions, subject)}
       title={title}
       onBack={onBack}
       onCategoryChange={setCategory}
       onDifficultyChange={setDifficulty}
+      onLibraryChange={(library) => {
+        setSelectedLibraryId(library?.id ?? null);
+        if (library) {
+          setSubject((current) => current.trim() || library.name);
+          setCategory(library.name);
+        }
+      }}
       onGenerate={handleGenerate}
       onAddDocument={() => setStep('materials')}
       onQuestionCountChange={updateQuestionCount}
@@ -353,11 +502,179 @@ export function CreateReviewerFlow({
   );
 }
 
+async function buildExtractionSummary({
+  currentSubject,
+  materialIds,
+  selectedLibrary,
+}: {
+  currentSubject: string;
+  materialIds: string[];
+  selectedLibrary: LibraryRecord | null;
+}): Promise<ExtractionSummary> {
+  const materials = materialIds.length > 0 ? await fetchLearningMaterialsByIds(materialIds) : [];
+  const readableMaterials = materials.filter((material) => material.extractedText?.trim());
+  const sourceText = buildSourceText(materials);
+  const detectedTopics = detectTopics(sourceText, materials);
+  const detectedSubject =
+    currentSubject.trim() ||
+    selectedLibrary?.name ||
+    detectSubject(sourceText, materials, detectedTopics) ||
+    'General Study';
+  const warnings: string[] = [];
+
+  if (materials.length === 0) {
+    warnings.push(
+      'No learning material is attached. TalinoQ will generate from your subject setup.'
+    );
+  }
+
+  if (materials.length > 0 && readableMaterials.length === 0) {
+    warnings.push(
+      'Your files are saved, but no readable text was extracted yet. Pasted text or clearer files improve AI accuracy.'
+    );
+  }
+
+  return {
+    characterCount: sourceText.length,
+    detectedSubject,
+    detectedTopics,
+    materialCount: materials.length,
+    materials,
+    previewText: sourceText
+      ? sourceText.replace(/\s+/g, ' ').trim().slice(0, 360)
+      : `No extracted text yet. The reviewer will use ${detectedSubject} and your configuration.`,
+    readableCount: readableMaterials.length,
+    sourceText,
+    warnings,
+  };
+}
+
+function buildSourceText(materials: MaterialPreview[]) {
+  return materials
+    .map((material, index) => {
+      const extracted = material.extractedText?.trim();
+      const fallback = [material.title, material.summary, material.subtitle, material.url]
+        .filter(Boolean)
+        .join('\n');
+
+      return [
+        `SOURCE ${index + 1}: ${material.title}`,
+        `TYPE: ${material.sourceType ?? material.kind}`,
+        extracted || fallback,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    })
+    .join('\n\n')
+    .trim()
+    .slice(0, 14000);
+}
+
+function detectSubject(text: string, materials: MaterialPreview[], topics: string[]) {
+  const haystack = `${text} ${materials.map((material) => material.title).join(' ')} ${topics.join(
+    ' '
+  )}`.toLowerCase();
+  const subjectSignals = [
+    {
+      subject: 'Biology',
+      terms: ['cell', 'mitochondria', 'protein', 'photosynthesis', 'respiration', 'organism'],
+    },
+    {
+      subject: 'Physics',
+      terms: ['quantum', 'force', 'energy', 'momentum', 'wave', 'electron', 'motion'],
+    },
+    {
+      subject: 'Chemistry',
+      terms: ['molecule', 'compound', 'reaction', 'acid', 'base', 'chemical', 'organic'],
+    },
+    {
+      subject: 'Mathematics',
+      terms: ['derivative', 'integral', 'equation', 'function', 'calculus', 'algebra'],
+    },
+    {
+      subject: 'Computer Science',
+      terms: ['program', 'algorithm', 'database', 'python', 'code', 'javascript', 'software'],
+    },
+    {
+      subject: 'History',
+      terms: ['revolution', 'war', 'empire', 'colonial', 'ancient', 'industrial'],
+    },
+    {
+      subject: 'Law',
+      terms: ['civil law', 'contract', 'statute', 'court', 'legal', 'rights'],
+    },
+  ];
+
+  const ranked = subjectSignals
+    .map((signal) => ({
+      subject: signal.subject,
+      score: signal.terms.reduce(
+        (total, term) => total + (haystack.includes(term) ? term.length : 0),
+        0
+      ),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return ranked[0]?.score ? ranked[0].subject : '';
+}
+
+function detectTopics(text: string, materials: MaterialPreview[]) {
+  const candidates = new Map<string, number>();
+  const source = `${materials.map((material) => material.title).join(' ')} ${text}`
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 10000);
+  const phraseMatches = source.match(/\b[A-Z][a-zA-Z]+(?:\s+[A-Z]?[a-zA-Z]+){0,2}\b/g) ?? [];
+  const stopWords = new Set([
+    'This',
+    'That',
+    'The',
+    'And',
+    'For',
+    'Your',
+    'Source',
+    'Type',
+    'Document',
+    'Image',
+  ]);
+
+  phraseMatches.forEach((phrase) => {
+    const cleaned = phrase.trim();
+    if (cleaned.length < 4 || stopWords.has(cleaned)) {
+      return;
+    }
+
+    candidates.set(cleaned, (candidates.get(cleaned) ?? 0) + 1);
+  });
+
+  return Array.from(candidates.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([topic]) => topic)
+    .slice(0, 6);
+}
+
+function buildSetupGuidance(context: ReturnType<typeof buildCalculatedStudyContext>) {
+  const focus = context.focusAreas[0];
+
+  if (focus) {
+    return `Based on your saved reviewer scores, TalinoQ recommends ${context.recommendedDifficulty} difficulty with extra practice on ${focus.name}.`;
+  }
+
+  if (context.analytics.reviewerCount > 0) {
+    return `TalinoQ calculated ${context.analytics.examReadiness}% exam readiness from ${context.analytics.reviewerCount} reviewer(s). Recommended difficulty: ${context.recommendedDifficulty}.`;
+  }
+
+  return 'Add learning materials and TalinoQ will calculate subject, topics, and reviewer targets from your real saved sources.';
+}
+
 function QuestionGenerationScreen({
   category,
   difficulty,
   errorMessage,
+  extractionSummary,
   estimatedItems,
+  generatedQuestions,
+  isGenerating,
   isSaving,
   reviewerTitle,
   subject,
@@ -369,7 +686,10 @@ function QuestionGenerationScreen({
   category: string;
   difficulty: Difficulty;
   errorMessage?: string | null;
+  extractionSummary: ExtractionSummary | null;
   estimatedItems: number;
+  generatedQuestions: ReviewerQuestion[];
+  isGenerating: boolean;
   isSaving: boolean;
   reviewerTitle: string;
   subject: string;
@@ -389,63 +709,133 @@ function QuestionGenerationScreen({
         </View>
         <Text style={styles.igniteTitle}>Igniting Intelligence...</Text>
         <Text style={styles.igniteCopy}>
-          Our AI is crafting your study material based on your uploaded source.
+          TalinoQ scanned {extractionSummary?.materialCount ?? 0} source
+          {(extractionSummary?.materialCount ?? 0) === 1 ? '' : 's'} and is crafting reviewer items
+          from readable extracted text.
         </Text>
 
         <View style={styles.processingList}>
-          <ProcessingRow done title="Scanning source material" subtitle="Complete" />
-          <ProcessingRow title="Analyzing key topics" subtitle="Finding core concepts..." />
+          <ProcessingRow
+            done={Boolean(extractionSummary)}
+            title="Scanning source material"
+            subtitle={
+              extractionSummary
+                ? `${extractionSummary.readableCount}/${extractionSummary.materialCount} readable source(s)`
+                : 'Preparing sources...'
+            }
+          />
+          <ProcessingRow
+            done={Boolean(extractionSummary?.detectedTopics.length)}
+            title="Analyzing key topics"
+            subtitle={
+              extractionSummary?.detectedTopics.length
+                ? extractionSummary.detectedTopics.slice(0, 3).join(', ')
+                : 'Finding core concepts...'
+            }
+          />
+          <ProcessingRow
+            active={isGenerating}
+            done={!isGenerating && generatedQuestions.length > 0}
+            title="Generating exam reviewer"
+            subtitle={
+              generatedQuestions.length > 0
+                ? `${generatedQuestions.length} AI questions ready`
+                : 'Writing questions, explanations, and answer keys...'
+            }
+          />
         </View>
+
+        {extractionSummary ? (
+          <View style={styles.detectedCard}>
+            <Check size={18} color="#008c84" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.detectedText}>{extractionSummary.detectedSubject}</Text>
+              <Text style={styles.generatedMeta}>
+                {extractionSummary.characterCount.toLocaleString()} extracted characters
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.generatedHeader}>
           <Text style={styles.generatedTitle}>{reviewerTitle}</Text>
           <Text style={styles.generatedMeta}>
-            {estimatedItems} questions generated from {subject || 'source material'} · {difficulty}
+            {generatedQuestions.length || estimatedItems} questions generated from{' '}
+            {subject || 'source material'} - {difficulty}
           </Text>
         </View>
 
-        <View style={styles.actionRow}>
-          <TouchableOpacity activeOpacity={0.85} onPress={onExport} style={styles.exportButton}>
-            <ArrowDownToLine size={13} color="#ffffff" />
-            <Text style={styles.exportButtonText}>Export</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={isSaving}
-            onPress={onSave}
-            style={[styles.saveButton, isSaving && styles.disabledButton]}>
-            {isSaving ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Library size={13} color="#ffffff" />
-            )}
-            <Text style={styles.exportButtonText}>{isSaving ? 'Saving...' : 'Save Reviewer'}</Text>
-          </TouchableOpacity>
-        </View>
+        {isGenerating && generatedQuestions.length === 0 ? (
+          <View style={styles.busyRow}>
+            <ActivityIndicator color="#004f4c" />
+            <Text style={styles.busyText}>Igniting intelligence from your source material...</Text>
+          </View>
+        ) : (
+          <View style={styles.actionRow}>
+            <TouchableOpacity activeOpacity={0.85} onPress={onExport} style={styles.exportButton}>
+              <ArrowDownToLine size={13} color="#ffffff" />
+              <Text style={styles.exportButtonText}>Export</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              disabled={isSaving || generatedQuestions.length === 0}
+              onPress={onSave}
+              style={[
+                styles.saveButton,
+                (isSaving || generatedQuestions.length === 0) && styles.disabledButton,
+              ]}>
+              {isSaving ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Library size={13} color="#ffffff" />
+              )}
+              <Text style={styles.exportButtonText}>
+                {isSaving ? 'Saving...' : 'Save Reviewer'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {errorMessage ? <Text style={styles.inlineErrorText}>{errorMessage}</Text> : null}
 
-        <View style={styles.questionCard}>
-          <Text style={styles.questionType}>Question 1 · Concept</Text>
-          <View style={styles.questionTools}>
-            <Pencil size={15} color="#94a3b8" />
-            <Trash2 size={15} color="#94a3b8" />
+        {generatedQuestions.slice(0, 3).map((question, index) => (
+          <View key={question.id} style={styles.questionCard}>
+            <Text style={styles.questionType}>
+              Question {index + 1} - {question.concept}
+            </Text>
+            <View style={styles.questionTools}>
+              <Pencil size={15} color="#94a3b8" />
+              <Trash2 size={15} color="#94a3b8" />
+            </View>
+            <Text style={styles.questionPrompt}>{question.prompt}</Text>
+            {question.options.length > 0 ? (
+              question.options.map((option, optionIndex) => (
+                <AnswerOption
+                  key={option.id}
+                  correct={option.isCorrect}
+                  letter={String.fromCharCode(65 + optionIndex)}
+                  label={option.label}
+                />
+              ))
+            ) : (
+              <Text style={styles.questionExplanation}>{question.explanation}</Text>
+            )}
           </View>
-          <Text style={styles.questionPrompt}>
-            Which principle states that it is impossible to simultaneously know both the exact
-            position and momentum of a particle?
-          </Text>
-          <AnswerOption letter="A" label="Pauli Exclusion Principle" />
-          <AnswerOption correct letter="B" label="Heisenberg Uncertainty Principle" />
-          <AnswerOption letter="C" label="Schrödinger Wave Equation" />
-        </View>
+        ))}
 
         <TouchableOpacity
           activeOpacity={0.86}
+          disabled={isGenerating}
           onPress={onRegenerate}
-          style={styles.regenerateButton}>
-          <RefreshCcw size={15} color="#ffffff" />
-          <Text style={styles.primaryButtonText}>Regenerate All Questions</Text>
+          style={[styles.regenerateButton, isGenerating && styles.disabledButton]}>
+          {isGenerating ? (
+            <ActivityIndicator color="#ffffff" size="small" />
+          ) : (
+            <RefreshCcw size={15} color="#ffffff" />
+          )}
+          <Text style={styles.primaryButtonText}>
+            {isGenerating ? 'Regenerating...' : 'Regenerate All Questions'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -558,7 +948,7 @@ function ExportSettingsScreen({
               <Text style={styles.previewTitle}>
                 Introduction to {reviewerTitle.replace(' Reviewer', '')}
               </Text>
-              <Text style={styles.previewSub}>FINAL REVIEWER · MODULE 3-4</Text>
+              <Text style={styles.previewSub}>FINAL REVIEWER - MODULE 3-4</Text>
             </View>
             <View style={styles.previewIcon}>
               <Library size={20} color="#ffffff" />
@@ -577,6 +967,7 @@ function ExportSettingsScreen({
 
 function ReviewerDetailScreen({
   category,
+  generatedQuestions,
   mastery,
   reviewer,
   reviewerTitle,
@@ -589,6 +980,7 @@ function ReviewerDetailScreen({
   onStudyFlashcards,
 }: {
   category: string;
+  generatedQuestions: ReviewerQuestion[];
   mastery: number;
   reviewer: ReviewerRecord | null;
   reviewerTitle: string;
@@ -604,10 +996,10 @@ function ReviewerDetailScreen({
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <FlowHeader title="Reviewer Ready" subtitle="Study or export" onBack={onBack} />
       <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.detailEyebrow}>ADVANCED PHYSICS · {category.toUpperCase()}</Text>
-        <Text style={styles.detailTitle}>
-          {(reviewer?.title ?? reviewerTitle).replace(' Reviewer', '')} Fundamentals
+        <Text style={styles.detailEyebrow}>
+          {(reviewer?.subject ?? subject).toUpperCase()} - {category.toUpperCase()}
         </Text>
+        <Text style={styles.detailTitle}>{reviewer?.title ?? reviewerTitle}</Text>
         <View style={styles.tagRow}>
           {(reviewer?.tags?.length ? reviewer.tags : ['reviewer', subject || 'study']).map(
             (tag) => (
@@ -625,8 +1017,10 @@ function ReviewerDetailScreen({
             </View>
           </View>
           <View style={styles.detailStat}>
-            <Text style={styles.detailStatLabel}>Study Streak</Text>
-            <Text style={styles.streakValue}>🔥 5 Days</Text>
+            <Text style={styles.detailStatLabel}>Saved Items</Text>
+            <Text style={styles.streakValue}>
+              {reviewer?.generatedQuestions.length ?? generatedQuestions.length}
+            </Text>
           </View>
         </View>
 
@@ -637,7 +1031,9 @@ function ReviewerDetailScreen({
           <View style={styles.readyTextBlock}>
             <Text style={styles.readyTitle}>Ready for Quiz</Text>
             <Text style={styles.readySubtitle}>
-              {reviewer ? `${reviewer.estimatedItems} saved items` : 'AI predicts 80% accuracy'}
+              {reviewer
+                ? `${reviewer.generatedQuestions.length} saved AI question(s)`
+                : `${generatedQuestions.length} generated question(s)`}
             </Text>
           </View>
           <Sparkles size={17} color="#facc15" />
@@ -674,15 +1070,24 @@ function ReviewerDetailScreen({
           <Text style={styles.topicsTitle}>Topics Covered</Text>
           <Text style={styles.viewAllText}>View All</Text>
         </View>
-        <TopicRow
-          title="Programming 1"
-          subtitle={`12 Concepts • ${subject ? '9' : '6'} Flashcards`}
-        />
-        <TopicRow title="College Calculus" subtitle="15 Concepts • 10 Flashcards" />
+        {Array.from(new Set(generatedQuestions.map((question) => question.concept)))
+          .slice(0, 4)
+          .map((topic) => (
+            <TopicRow
+              key={topic}
+              title={topic}
+              subtitle={`${
+                generatedQuestions.filter((question) => question.concept === topic).length
+              } question(s)`}
+            />
+          ))}
 
         <View style={styles.generatedArtwork}>
           <View style={styles.artBurst} />
-          <Text style={styles.artText}>Generated from Lecture Notes • Oct 24</Text>
+          <Text style={styles.artText}>
+            Generated{' '}
+            {reviewer?.createdAt ? new Date(reviewer.createdAt).toLocaleDateString() : 'today'}
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -728,10 +1133,12 @@ function Tag({ label }: { label: string }) {
 }
 
 function ProcessingRow({
+  active,
   done,
   title,
   subtitle,
 }: {
+  active?: boolean;
   done?: boolean;
   title: string;
   subtitle: string;
@@ -739,7 +1146,13 @@ function ProcessingRow({
   return (
     <View style={styles.processingRow}>
       <View style={[styles.processingIcon, done && styles.processingIconDone]}>
-        {done ? <Check size={12} color="#008c84" /> : <RefreshCcw size={11} color="#008c84" />}
+        {active ? (
+          <ActivityIndicator color="#008c84" size="small" />
+        ) : done ? (
+          <Check size={12} color="#008c84" />
+        ) : (
+          <RefreshCcw size={11} color="#008c84" />
+        )}
       </View>
       <View>
         <Text style={styles.processingTitle}>{title}</Text>
@@ -1149,6 +1562,21 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: 10,
   },
+  busyRow: {
+    alignItems: 'center',
+    backgroundColor: '#eefafa',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+    padding: 13,
+  },
+  busyText: {
+    color: '#004f4c',
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+  },
   secondaryButton: {
     alignItems: 'center',
     borderColor: '#004f4c',
@@ -1436,6 +1864,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 19,
     marginTop: 14,
+  },
+  questionExplanation: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 10,
   },
   answerOption: {
     alignItems: 'center',

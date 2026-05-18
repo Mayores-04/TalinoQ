@@ -1,10 +1,18 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calculator, Lightbulb, Rocket, Sigma } from 'lucide-react-native';
 import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
+import { subscribeToReviewers } from '@/lib/reviewers';
+import {
+  buildCalculatedStudyContext,
+  buildStudyAnalytics,
+  type CalculatedStudyContext,
+  type StudyAnalytics,
+  type SubjectAnalytics,
+} from '@/lib/studyAnalytics';
 
 type ProgressAnalyticsPageProps = {
   onBack?: () => void;
@@ -13,16 +21,6 @@ type ProgressAnalyticsPageProps = {
   onOpenCreate?: () => void;
   onOpenAIChat?: () => void;
 };
-
-const heatmap = [
-  [32, 62, 48],
-  [40, 82, 76],
-  [94, 88, 92],
-  [42, 70, 52],
-  [72, 84, 50],
-  [36, 92, 89],
-  [28, 61, 69],
-];
 
 export function ProgressAnalyticsPage({
   onBack: _onBack,
@@ -33,7 +31,29 @@ export function ProgressAnalyticsPage({
 }: ProgressAnalyticsPageProps) {
   const initialLoading = useSkeletonLoading();
   const { refreshing, refresh } = usePullToRefresh();
-  const isLoading = initialLoading || refreshing;
+  const [analytics, setAnalytics] = useState<StudyAnalytics>(() => buildStudyAnalytics([]));
+  const [calculatedContext, setCalculatedContext] = useState<CalculatedStudyContext>(() =>
+    buildCalculatedStudyContext([])
+  );
+  const [databaseLoading, setDatabaseLoading] = useState(true);
+  const isLoading = initialLoading || refreshing || databaseLoading;
+
+  useEffect(() => {
+    return subscribeToReviewers(
+      (reviewers) => {
+        const context = buildCalculatedStudyContext(reviewers);
+        setAnalytics(context.analytics);
+        setCalculatedContext(context);
+        setDatabaseLoading(false);
+      },
+      () => {
+        const context = buildCalculatedStudyContext([]);
+        setAnalytics(context.analytics);
+        setCalculatedContext(context);
+        setDatabaseLoading(false);
+      }
+    );
+  }, []);
 
   return (
     <SafeAreaView edges={[]} style={styles.safeArea}>
@@ -56,38 +76,64 @@ export function ProgressAnalyticsPage({
               <View style={styles.readinessTop}>
                 <View>
                   <Text style={styles.cardLabel}>Exam Readiness</Text>
-                  <Text style={styles.readinessValue}>84% Ready</Text>
+                  <Text style={styles.readinessValue}>{analytics.examReadiness}% Ready</Text>
                 </View>
                 <View style={styles.masteryBadge}>
-                  <Text style={styles.masteryText}>Mastery Level</Text>
+                  <Text style={styles.masteryText}>
+                    {analytics.examReadiness >= 80 ? 'Mastery Level' : 'Building Level'}
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.metricRow}>
                 <View style={styles.metricBox}>
                   <Text style={styles.metricLabel}>Study Streak</Text>
-                  <Text style={styles.metricValue}>12 Days</Text>
+                  <Text style={styles.metricValue}>{analytics.studyStreak} Days</Text>
                 </View>
                 <View style={styles.metricBox}>
                   <Text style={styles.metricLabel}>Hours Logged</Text>
-                  <Text style={styles.metricValue}>48.5h</Text>
+                  <Text style={styles.metricValue}>{analytics.hoursLogged}h</Text>
                 </View>
+              </View>
+            </View>
+
+            <View style={styles.logicCard}>
+              <View style={styles.logicHeader}>
+                <View style={styles.logicIcon}>
+                  <Calculator size={17} color="#00625e" />
+                </View>
+                <View style={styles.logicTitleBlock}>
+                  <Text style={styles.logicTitle}>Calculation First</Text>
+                  <Text style={styles.logicSubtitle}>AI gets focused facts, not raw guesses.</Text>
+                </View>
+              </View>
+              <Text style={styles.logicBody}>
+                {calculatedContext.focusAreas.length > 0
+                  ? `TalinoQ calculated ${calculatedContext.focusAreas[0].name} as the top focus area at ${calculatedContext.focusAreas[0].score}% mastery. AI reviewer generation will target these computed gaps with ${calculatedContext.recommendedDifficulty.toLowerCase()} difficulty.`
+                  : analytics.reviewerCount > 0
+                    ? `TalinoQ calculated ${analytics.examReadiness}% readiness with no subject below 80%. AI will use this summary before generating drills.`
+                    : 'Create reviewers first and TalinoQ will calculate weak areas before asking AI to help.'}
+              </Text>
+              <View style={styles.logicMetrics}>
+                <LogicMetric label="Completion" value={`${calculatedContext.reviewerCompletion}%`} />
+                <LogicMetric label="Focus Areas" value={`${calculatedContext.focusAreas.length}`} />
+                <LogicMetric label="AI Level" value={calculatedContext.recommendedDifficulty} />
               </View>
             </View>
 
             <Text style={styles.sectionTitle}>Weekly Activity</Text>
             <View style={styles.activityCard}>
               <View style={styles.dayLabels}>
-                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => (
+                {analytics.weeklyActivity.map((day, index) => (
                   <Text key={`${day}-${index}`} style={styles.dayText}>
-                    {day}
+                    {day.label}
                   </Text>
                 ))}
               </View>
               <View style={styles.heatmapRow}>
-                {heatmap.map((column, columnIndex) => (
+                {analytics.weeklyActivity.map((day, columnIndex) => (
                   <View key={columnIndex} style={styles.heatColumn}>
-                    {column.map((value, rowIndex) => (
+                    {[day.value * 0.55, day.value * 0.82, day.value].map((value, rowIndex) => (
                       <View
                         key={`${columnIndex}-${rowIndex}`}
                         style={[styles.heatCell, { backgroundColor: getHeatColor(value) }]}
@@ -97,7 +143,9 @@ export function ProgressAnalyticsPage({
                 ))}
               </View>
               <View style={styles.legendRow}>
-                <Text style={styles.averageText}>Daily average: 4.2h</Text>
+                <Text style={styles.averageText}>
+                  Daily average: {Math.round((analytics.hoursLogged / 7) * 10) / 10}h
+                </Text>
                 <View style={styles.legend}>
                   <Text style={styles.legendText}>Less</Text>
                   <View style={[styles.legendCell, { backgroundColor: '#d7edf1' }]} />
@@ -115,44 +163,42 @@ export function ProgressAnalyticsPage({
               </TouchableOpacity>
             </View>
 
-            <SubjectRow
-              icon={<Sigma size={21} color="#ffffff" />}
-              title="Advanced Calculus"
-              value={92}
-              accent="#020a68"
-              iconBg="#252190"
-            />
-            <SubjectRow
-              icon={<Rocket size={21} color="#006a6c" />}
-              title="Quantum Mechanics"
-              value={76}
-              accent="#007f86"
-              iconBg="#c7f7fb"
-            />
-            <SubjectRow
-              icon={<Calculator size={21} color="#8a3929" />}
-              title="Molecular Biology"
-              value={64}
-              accent="#ee845e"
-              iconBg="#ffe2d4"
-            />
+            {analytics.subjects.length > 0 ? (
+              analytics.subjects
+                .slice(0, 5)
+                .map((subject, index) => (
+                  <SubjectRow
+                    key={subject.id}
+                    icon={getSubjectIcon(index)}
+                    subject={subject}
+                    accent={getSubjectAccent(index)}
+                    iconBg={getSubjectIconBg(index)}
+                  />
+                ))
+            ) : (
+              <View style={styles.emptyProgressCard}>
+                <Text style={styles.emptyProgressTitle}>No subject data yet</Text>
+                <Text style={styles.emptyProgressText}>
+                  Create reviewers and TalinoQ will build your subject mastery here.
+                </Text>
+              </View>
+            )}
 
             <Text style={styles.sectionTitle}>Aha! Focus Areas</Text>
             <View style={styles.focusRow}>
-              <FocusCard
-                title="Partial Derivatives"
-                label="IMPROVEMENT NEEDED"
-                body="Your accuracy on chain-rule applications dropped by 15% this week. Try a 10min AI session."
-                buttonText="Solve Weakness"
-                tone="navy"
-              />
-              <FocusCard
-                title="Thermodynamics"
-                label="CONCEPT GAP"
-                body="Entropy calculations are causing confusion. Re-watch the Second Law summary."
-                buttonText="Quick Review"
-                tone="teal"
-              />
+              {(analytics.weakSubjects.length > 0
+                ? analytics.weakSubjects.slice(0, 2)
+                : analytics.subjects.slice(-2)
+              ).map((subject, index) => (
+                <FocusCard
+                  key={subject.id}
+                  title={subject.name}
+                  label={index === 0 ? 'IMPROVEMENT NEEDED' : 'CONCEPT GAP'}
+                  body={`${subject.category} has ${subject.averageMastery}% mastery across ${subject.reviewerCount} reviewer${subject.reviewerCount === 1 ? '' : 's'}. Open AI chat for a quick drill.`}
+                  buttonText={index === 0 ? 'Solve Weakness' : 'Quick Review'}
+                  tone={index === 0 ? 'navy' : 'teal'}
+                />
+              ))}
             </View>
           </>
         )}
@@ -201,14 +247,12 @@ function ProgressAnalyticsSkeleton() {
 
 function SubjectRow({
   icon,
-  title,
-  value,
+  subject,
   accent,
   iconBg,
 }: {
   icon: React.ReactNode;
-  title: string;
-  value: number;
+  subject: SubjectAnalytics;
   accent: string;
   iconBg: string;
 }) {
@@ -217,20 +261,51 @@ function SubjectRow({
       <View style={[styles.subjectIcon, { backgroundColor: iconBg }]}>{icon}</View>
       <View style={styles.subjectBody}>
         <View style={styles.subjectTop}>
-          <Text style={styles.subjectTitle}>{title}</Text>
-          <Text style={[styles.subjectValue, { color: accent }]}>{value}%</Text>
+          <Text style={styles.subjectTitle}>{subject.name}</Text>
+          <Text style={[styles.subjectValue, { color: accent }]}>{subject.averageMastery}%</Text>
         </View>
+        <Text style={styles.subjectMeta}>
+          {subject.reviewerCount} reviewer{subject.reviewerCount === 1 ? '' : 's'} -{' '}
+          {subject.itemCount} items
+        </Text>
         <View style={styles.subjectTrack}>
           <View
             style={[
               styles.subjectFill,
-              { backgroundColor: accent, width: `${value}%` as `${number}%` },
+              { backgroundColor: accent, width: `${subject.averageMastery}%` as `${number}%` },
             ]}
           />
         </View>
       </View>
     </View>
   );
+}
+
+function LogicMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.logicMetric}>
+      <Text style={styles.logicMetricLabel}>{label}</Text>
+      <Text style={styles.logicMetricValue}>{value}</Text>
+    </View>
+  );
+}
+
+function getSubjectIcon(index: number) {
+  const icons = [
+    <Sigma key="sigma" size={21} color="#ffffff" />,
+    <Rocket key="rocket" size={21} color="#006a6c" />,
+    <Calculator key="calculator" size={21} color="#8a3929" />,
+  ];
+
+  return icons[index % icons.length];
+}
+
+function getSubjectAccent(index: number) {
+  return ['#020a68', '#007f86', '#ee845e'][index % 3];
+}
+
+function getSubjectIconBg(index: number) {
+  return ['#252190', '#c7f7fb', '#ffe2d4'][index % 3];
 }
 
 function FocusCard({
@@ -319,7 +394,7 @@ const styles = StyleSheet.create({
   metricRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 124,
+    marginTop: 24,
   },
   skeletonMetricRow: {
     flexDirection: 'row',
@@ -341,6 +416,70 @@ const styles = StyleSheet.create({
     color: '#020a68',
     fontSize: 20,
     fontWeight: '900',
+  },
+  logicCard: {
+    backgroundColor: '#f7fffe',
+    borderColor: '#bdeeee',
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 16,
+  },
+  logicHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  logicIcon: {
+    alignItems: 'center',
+    backgroundColor: '#d9fbf7',
+    borderRadius: 999,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  logicTitleBlock: {
+    flex: 1,
+  },
+  logicTitle: {
+    color: '#005b57',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  logicSubtitle: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  logicBody: {
+    color: '#334155',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 12,
+  },
+  logicMetrics: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  logicMetric: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  logicMetricLabel: {
+    color: '#64748b',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  logicMetricValue: {
+    color: '#020a68',
+    fontSize: 13,
+    fontWeight: '900',
+    marginTop: 2,
   },
   sectionHeader: {
     alignItems: 'center',
@@ -437,6 +576,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
   },
+  subjectMeta: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 4,
+  },
   subjectValue: {
     fontSize: 12,
     fontWeight: '900',
@@ -455,6 +600,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
     marginTop: 10,
+  },
+  emptyProgressCard: {
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe6ee',
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 10,
+    padding: 16,
+  },
+  emptyProgressTitle: {
+    color: '#020a68',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  emptyProgressText: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
   },
   focusCard: {
     borderRadius: 10,

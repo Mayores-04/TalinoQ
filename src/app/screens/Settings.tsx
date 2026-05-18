@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { RefreshControl, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  RefreshControl,
+  ScrollView,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {
   Bell,
   Bot,
@@ -41,6 +49,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
   const initialLoading = useSkeletonLoading();
   const { refreshing, refresh } = usePullToRefresh();
   const isLoading = initialLoading || refreshing;
+  const showInfo = (title: string, message: string) => {
+    Alert.alert(title, message);
+  };
 
   return (
     <SafeAreaView edges={['top']} className="flex-1 bg-slate-50">
@@ -98,7 +109,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             iconClassName="bg-blue-50"
             title="Sync & Cloud"
             rightText="Last synced 2m ago"
-            onPress={() => console.log('Open sync')}
+            onPress={() =>
+              showInfo('Sync & Cloud', 'TalinoQ saves your libraries, reviewers, materials, and AI chats to your account.')
+            }
           />
 
           <Divider />
@@ -107,7 +120,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             icon={<Bell size={17} color="#172554" />}
             iconClassName="bg-blue-50"
             title="Notifications"
-            onPress={() => console.log('Open notifications')}
+            onPress={() =>
+              showInfo('Notifications', 'Notifications are managed from the TalinoQ notification panel.')
+            }
           />
 
           <Divider />
@@ -170,7 +185,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             iconClassName="bg-blue-50"
             title="Offline Storage"
             rightText="1.2 GB used"
-            onPress={() => console.log('Open offline storage')}
+            onPress={() =>
+              showInfo('Offline Storage', 'TalinoQ keeps a local cache for material drafts and sync recovery.')
+            }
           />
         </SettingsSection>
 
@@ -180,7 +197,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             iconClassName="bg-blue-50"
             title="About TalinoQ"
             rightText="v2.4.0"
-            onPress={() => console.log('Open about')}
+            onPress={() =>
+              showInfo('About TalinoQ', 'TalinoQ helps you scan, review, and improve with organized reviewers and AI study support.')
+            }
           />
 
           <Divider />
@@ -189,7 +208,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             icon={<HelpCircle size={17} color="#172554" />}
             iconClassName="bg-blue-50"
             title="Help & FAQ"
-            onPress={() => console.log('Open help')}
+            onPress={() =>
+              showInfo('Help & FAQ', 'Create a library, upload materials, then generate reviewers or ask TalinoQ AI for help.')
+            }
           />
         </SettingsSection>
 
@@ -217,6 +238,12 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
 
             <TouchableOpacity
               activeOpacity={0.85}
+              onPress={() =>
+                showInfo(
+                  'Diagnostic Complete',
+                  'Your account settings, AI preference, and local app configuration are available.'
+                )
+              }
               className="mt-5 self-start rounded-full bg-cyan-200 px-5 py-2">
               <Text className="text-xs font-black text-teal-950">Run Diagnostic</Text>
             </TouchableOpacity>

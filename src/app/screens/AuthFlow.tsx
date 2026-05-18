@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { ForgotPasswordScreen } from '@/app/screens/ForgotPasswordScreen';
 import { HomeDashboard } from '@/app/pages/HomeDashboard';
@@ -14,6 +14,7 @@ import { UserProfilePage } from '@/app/pages/UserProfilePage';
 import { SettingsPage } from './Settings';
 import { resolveNextRoute } from '@/app/controllers/authFlowController';
 import { useAuthSession } from '@/app/sessions/useAuthSession';
+import { AppChrome } from '@/components/app/AppChrome';
 
 export type AuthRoute =
   | 'splash'
@@ -35,6 +36,7 @@ type AuthFlowProps = {
 };
 
 export function AuthFlow({ route, setRoute }: AuthFlowProps) {
+  const [reviewersStudyOpen, setReviewersStudyOpen] = useState(false);
   const {
     checkingAuth,
     checkingOnboarding,
@@ -61,6 +63,12 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
     }
   }, [hasSeenOnboarding, isAuthenticated, route, setRoute, splashFinished]);
 
+  useEffect(() => {
+    if (route !== 'reviewers') {
+      setReviewersStudyOpen(false);
+    }
+  }, [route]);
+
   if (checkingAuth || route === 'splash') {
     return <SplashScreen onDone={() => setSplashFinished(true)} />;
   }
@@ -69,15 +77,21 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
     return <OnboardingScreen onDone={finishOnboarding} />;
   }
 
+  const withChrome = (children: ReactNode, options?: { hideHeader?: boolean }) => (
+    <AppChrome currentRoute={route} hideHeader={options?.hideHeader} onNavigate={setRoute}>
+      {children}
+    </AppChrome>
+  );
+
   if (route === 'home') {
-    return (
+    return withChrome(
       <HomeDashboard
         userName={userProfile?.firstName}
         onCreateReviewer={() => setRoute('create-reviewer')}
         onOpenReviewers={() => setRoute('reviewers')}
         onOpenProgress={() => setRoute('progress')}
         onOpenAIChat={() => setRoute('ai-chat')}
-        onOpenWeakTopics={() => console.log('Open weak topics')}
+        onOpenWeakTopics={() => setRoute('progress')}
       />
     );
   }
@@ -91,7 +105,7 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
   }
 
   if (route === 'settings') {
-    return (
+    return withChrome(
       <SettingsPage
         userProfile={userProfile}
         onBack={() => setRoute('home')}
@@ -109,7 +123,7 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
   }
 
   if (route === 'profile') {
-    return (
+    return withChrome(
       <UserProfilePage
         currentUser={currentUser}
         userProfile={userProfile}
@@ -122,7 +136,7 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
   }
 
   if (route === 'reviewers') {
-    return (
+    return withChrome(
       <ReviewersPage
         onBack={() => setRoute('home')}
         onOpenHome={() => setRoute('home')}
@@ -130,12 +144,14 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
         onOpenCreate={() => setRoute('create-reviewer')}
         onOpenProgress={() => setRoute('progress')}
         onOpenAIChat={() => setRoute('ai-chat')}
-      />
+        onStudyModeChange={setReviewersStudyOpen}
+      />,
+      { hideHeader: reviewersStudyOpen }
     );
   }
 
   if (route === 'create-reviewer') {
-    return (
+    return withChrome(
       <CreateReviewerFlow
         onBack={() => setRoute('home')}
         onOpenHome={() => setRoute('home')}
@@ -147,7 +163,7 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
   }
 
   if (route === 'progress') {
-    return (
+    return withChrome(
       <ProgressAnalyticsPage
         onBack={() => setRoute('home')}
         onOpenHome={() => setRoute('home')}
@@ -159,7 +175,7 @@ export function AuthFlow({ route, setRoute }: AuthFlowProps) {
   }
 
   if (route === 'ai-chat') {
-    return (
+    return withChrome(
       <AIChatPage
         onBack={() => setRoute('home')}
         onOpenHome={() => setRoute('home')}

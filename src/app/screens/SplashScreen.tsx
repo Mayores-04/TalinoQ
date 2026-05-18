@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +14,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
   const opacity = useRef(new Animated.Value(1)).current;
   const didFinish = useRef(false);
 
-  const beginExit = () => {
+  const beginExit = useCallback(() => {
     if (didFinish.current) {
       return;
     }
@@ -32,7 +32,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
         onDone();
       }
     });
-  };
+  }, [onDone, opacity]);
 
   useEffect(() => {
     const animation = Animated.timing(progress, {
@@ -50,7 +50,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
     return () => {
       animation.stop();
     };
-  }, [onDone, progress]);
+  }, [beginExit, progress]);
 
   const handleSkip = () => {
     beginExit();
