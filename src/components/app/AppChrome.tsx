@@ -19,6 +19,7 @@ import { NotificationsPanel } from '@/components/app/NotificationsPanel';
 type AppChromeProps = {
   children: React.ReactNode;
   currentRoute: AuthRoute;
+  hideHeader?: boolean;
   onNavigate: (route: AuthRoute) => void;
 };
 
@@ -35,11 +36,11 @@ const bottomNavRoutes: AuthRoute[] = [
 const SHEET_CLOSE_DISTANCE = 420;
 const SHEET_CLOSE_THRESHOLD = SHEET_CLOSE_DISTANCE * 0.42;
 
-export function AppChrome({ children, currentRoute, onNavigate }: AppChromeProps) {
+export function AppChrome({ children, currentRoute, hideHeader, onNavigate }: AppChromeProps) {
   const insets = useSafeAreaInsets();
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
-  const showHeader = headerRoutes.includes(currentRoute);
+  const showHeader = headerRoutes.includes(currentRoute) && !hideHeader;
   const showBottomNav = bottomNavRoutes.includes(currentRoute);
 
   const openNotifications = () => {

@@ -1,9 +1,9 @@
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -11,9 +11,11 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   type DocumentSnapshot,
   type DocumentData,
   type QueryDocumentSnapshot,
+  type WriteBatch,
 } from 'firebase/firestore';
 
 import { firebaseAuth, firebaseDb } from '@/lib/firebase';
@@ -58,7 +60,10 @@ export type CreateReviewerInput = {
   category: string;
   difficulty: ReviewerDifficulty;
   questionCounts: ReviewerQuestionConfig[];
+  libraryId?: string | null;
+  libraryName?: string | null;
   sourceMaterialIds?: string[];
+  generatedQuestions?: ReviewerQuestion[];
   exportSettings: ReviewerExportSettings;
   status?: ReviewerStatus;
 };
@@ -70,6 +75,8 @@ export type ReviewerRecord = {
   normalizedTitle: string;
   subject: string;
   category: string;
+  libraryId?: string | null;
+  libraryName?: string | null;
   difficulty: ReviewerDifficulty;
   status: ReviewerStatus;
   estimatedItems: number;
@@ -79,6 +86,10 @@ export type ReviewerRecord = {
   tags: string[];
   generatedQuestions: ReviewerQuestion[];
   exportSettings: ReviewerExportSettings;
+  lastQuizScore?: number;
+  lastQuizCorrect?: number;
+  lastQuizTotal?: number;
+  lastStudiedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -100,12 +111,26 @@ function reviewersCollection(userId: string) {
   return collection(firebaseDb, 'users', userId, 'reviewers');
 }
 
-function getReviewerUserId() {
-  const userId = firebaseAuth?.currentUser?.uid;
-
+function libraryDocument(userId: string, libraryId: string) {
   if (!firebaseDb) {
     throw new Error('Firebase database is not initialized');
   }
+
+  return doc(firebaseDb, 'users', userId, 'libraries', libraryId);
+}
+
+function getReviewerDb() {
+  if (!firebaseDb) {
+    throw new Error('Firebase database is not initialized');
+  }
+
+  return firebaseDb;
+}
+
+function getReviewerUserId() {
+  const userId = firebaseAuth?.currentUser?.uid;
+
+  getReviewerDb();
 
   if (!userId) {
     throw new Error('Sign in again before creating a reviewer.');
@@ -119,6 +144,15 @@ function sanitizeText(value: string, fallback: string, maxLength = 120) {
   return (cleaned || fallback).slice(0, maxLength);
 }
 
+function sanitizeOptionalText(value: string | null | undefined, maxLength = 120) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const cleaned = value.replace(/\s+/g, ' ').trim();
+  return cleaned ? cleaned.slice(0, maxLength) : null;
+}
+
 function normalizeTitle(value: string) {
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
@@ -127,8 +161,16 @@ function readString(value: unknown, fallback: string) {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function readOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function readNumber(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function readOptionalNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function readBoolean(value: unknown, fallback: boolean) {
@@ -173,7 +215,7 @@ function buildTags(subject: string, category: string) {
     .slice(0, 5);
 }
 
-function buildGeneratedQuestions(input: {
+export function buildFallbackReviewerQuestions(input: {
   subject: string;
   difficulty: ReviewerDifficulty;
 }): ReviewerQuestion[] {
@@ -196,6 +238,55 @@ function buildGeneratedQuestions(input: {
   ];
 }
 
+function normalizeGeneratedQuestions(value: unknown, fallback: ReviewerQuestion[]) {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const questions = value
+    .map((item, index): ReviewerQuestion | null => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+
+      const rawQuestion = item as Partial<ReviewerQuestion>;
+      const options = Array.isArray(rawQuestion.options)
+        ? rawQuestion.options
+            .map((option, optionIndex): ReviewerQuestionOption | null => {
+              if (!option || typeof option !== 'object') {
+                return null;
+              }
+
+              const rawOption = option as Partial<ReviewerQuestionOption>;
+
+              return {
+                id: sanitizeText(rawOption.id ?? String.fromCharCode(97 + optionIndex), 'a', 12),
+                label: sanitizeText(rawOption.label ?? '', `Option ${optionIndex + 1}`, 220),
+                isCorrect: Boolean(rawOption.isCorrect),
+              };
+            })
+            .filter((option): option is ReviewerQuestionOption => Boolean(option))
+        : [];
+
+      return {
+        id: sanitizeText(rawQuestion.id ?? `question-${index + 1}`, `question-${index + 1}`, 48),
+        type: sanitizeText(rawQuestion.type ?? 'multiple-choice', 'multiple-choice', 48),
+        concept: sanitizeText(rawQuestion.concept ?? 'Core concept', 'Core concept', 120),
+        prompt: sanitizeText(rawQuestion.prompt ?? '', 'Review this topic carefully.', 500),
+        options,
+        explanation: sanitizeText(
+          rawQuestion.explanation ?? '',
+          'Review the source material and connect the concept to examples.',
+          600
+        ),
+      };
+    })
+    .filter((question): question is ReviewerQuestion => Boolean(question))
+    .slice(0, 20);
+
+  return questions.length > 0 ? questions : fallback;
+}
+
 function normalizeExportSettings(settings: ReviewerExportSettings): ReviewerExportSettings {
   return {
     format: validFormats.includes(settings.format) ? settings.format : 'PDF',
@@ -204,6 +295,49 @@ function normalizeExportSettings(settings: ReviewerExportSettings): ReviewerExpo
     includeHeader: Boolean(settings.includeHeader),
     theme: sanitizeText(settings.theme, 'Modern Academic', 80),
   };
+}
+
+function updateLibraryCountsForReviewerMove({
+  batch,
+  newLibraryId,
+  newMaterialCount,
+  oldLibraryId,
+  oldMaterialCount,
+  userId,
+}: {
+  batch: WriteBatch;
+  newLibraryId: string | null;
+  newMaterialCount: number;
+  oldLibraryId: string | null;
+  oldMaterialCount: number;
+  userId: string;
+}) {
+  if (oldLibraryId === newLibraryId) {
+    if (newLibraryId && newMaterialCount !== oldMaterialCount) {
+      batch.update(libraryDocument(userId, newLibraryId), {
+        materialCount: increment(newMaterialCount - oldMaterialCount),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    return;
+  }
+
+  if (oldLibraryId) {
+    batch.update(libraryDocument(userId, oldLibraryId), {
+      reviewerCount: increment(-1),
+      materialCount: increment(-oldMaterialCount),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  if (newLibraryId) {
+    batch.update(libraryDocument(userId, newLibraryId), {
+      reviewerCount: increment(1),
+      materialCount: increment(newMaterialCount),
+      updatedAt: serverTimestamp(),
+    });
+  }
 }
 
 export function validateReviewerDraft(input: CreateReviewerInput) {
@@ -238,10 +372,13 @@ export function validateReviewerDraft(input: CreateReviewerInput) {
     normalizedTitle: normalizeTitle(title),
     subject,
     category,
+    libraryId: sanitizeOptionalText(input.libraryId, 120),
+    libraryName: sanitizeOptionalText(input.libraryName, 120),
     difficulty: input.difficulty,
     questionCounts,
     estimatedItems,
     sourceMaterialIds: Array.from(new Set(input.sourceMaterialIds ?? [])),
+    generatedQuestions: input.generatedQuestions,
     exportSettings: normalizeExportSettings(input.exportSettings),
     status: input.status ?? 'Ready',
   };
@@ -271,6 +408,8 @@ function mapReviewerDocument(
     normalizedTitle: readString(data.normalizedTitle, normalizeTitle(readString(data.title, ''))),
     subject: readString(data.subject, 'General Study'),
     category: readString(data.category, 'Lecture Review'),
+    libraryId: readOptionalString(data.libraryId),
+    libraryName: readOptionalString(data.libraryName),
     difficulty,
     status,
     estimatedItems: readNumber(data.estimatedItems, 0),
@@ -280,10 +419,18 @@ function mapReviewerDocument(
       : [],
     sourceMaterialIds: readStringArray(data.sourceMaterialIds),
     tags: readStringArray(data.tags),
-    generatedQuestions: Array.isArray(data.generatedQuestions)
-      ? (data.generatedQuestions as ReviewerQuestion[])
-      : [],
+    generatedQuestions: normalizeGeneratedQuestions(
+      data.generatedQuestions,
+      buildFallbackReviewerQuestions({
+        subject: readString(data.subject, 'General Study'),
+        difficulty,
+      })
+    ),
     exportSettings,
+    lastQuizScore: readOptionalNumber(data.lastQuizScore),
+    lastQuizCorrect: readOptionalNumber(data.lastQuizCorrect),
+    lastQuizTotal: readOptionalNumber(data.lastQuizTotal),
+    lastStudiedAt: readTimestamp(data.lastStudiedAt),
     createdAt: readTimestamp(data.createdAt),
     updatedAt: readTimestamp(data.updatedAt),
   };
@@ -322,7 +469,12 @@ export async function fetchReviewers() {
 
 export async function createReviewer(input: CreateReviewerInput) {
   const userId = getReviewerUserId();
+  const db = getReviewerDb();
   const draft = validateReviewerDraft(input);
+  const generatedQuestions = normalizeGeneratedQuestions(
+    draft.generatedQuestions,
+    buildFallbackReviewerQuestions(draft)
+  );
   const duplicateQuery = query(
     reviewersCollection(userId),
     where('normalizedTitle', '==', draft.normalizedTitle),
@@ -334,12 +486,17 @@ export async function createReviewer(input: CreateReviewerInput) {
     throw new Error('A reviewer with this title already exists.');
   }
 
-  const docRef = await addDoc(reviewersCollection(userId), {
+  const reviewerRef = doc(reviewersCollection(userId));
+  const batch = writeBatch(db);
+
+  batch.set(reviewerRef, {
     ownerId: userId,
     title: draft.title,
     normalizedTitle: draft.normalizedTitle,
     subject: draft.subject,
     category: draft.category,
+    libraryId: draft.libraryId ?? null,
+    libraryName: draft.libraryName ?? null,
     difficulty: draft.difficulty,
     status: draft.status,
     estimatedItems: draft.estimatedItems,
@@ -347,18 +504,102 @@ export async function createReviewer(input: CreateReviewerInput) {
     questionCounts: draft.questionCounts,
     sourceMaterialIds: draft.sourceMaterialIds,
     tags: buildTags(draft.subject, draft.category),
-    generatedQuestions: buildGeneratedQuestions(draft),
+    generatedQuestions,
     exportSettings: draft.exportSettings,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
-  const created = await getDoc(docRef);
+  if (draft.libraryId) {
+    batch.update(libraryDocument(userId, draft.libraryId), {
+      reviewerCount: increment(1),
+      materialCount: increment(draft.sourceMaterialIds.length),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
+
+  const created = await getDoc(reviewerRef);
   if (!created.exists()) {
     throw new Error('Reviewer was saved, but could not be loaded.');
   }
 
   return mapReviewerDocument(created);
+}
+
+export async function fetchReviewer(reviewerId: string) {
+  const userId = getReviewerUserId();
+  const snapshot = await getDoc(doc(reviewersCollection(userId), reviewerId));
+
+  if (!snapshot.exists()) {
+    throw new Error('Reviewer was not found.');
+  }
+
+  return mapReviewerDocument(snapshot);
+}
+
+export async function updateReviewer(reviewerId: string, input: CreateReviewerInput) {
+  const userId = getReviewerUserId();
+  const db = getReviewerDb();
+  const draft = validateReviewerDraft(input);
+  const generatedQuestions = normalizeGeneratedQuestions(
+    draft.generatedQuestions,
+    buildFallbackReviewerQuestions(draft)
+  );
+  const duplicateQuery = query(
+    reviewersCollection(userId),
+    where('normalizedTitle', '==', draft.normalizedTitle),
+    limit(2)
+  );
+  const duplicateSnapshot = await getDocs(duplicateQuery);
+  const hasDuplicate = duplicateSnapshot.docs.some((snapshot) => snapshot.id !== reviewerId);
+
+  if (hasDuplicate) {
+    throw new Error('A reviewer with this title already exists.');
+  }
+
+  const reviewerRef = doc(reviewersCollection(userId), reviewerId);
+  const currentSnapshot = await getDoc(reviewerRef);
+
+  if (!currentSnapshot.exists()) {
+    throw new Error('Reviewer was not found.');
+  }
+
+  const current = mapReviewerDocument(currentSnapshot);
+  const batch = writeBatch(db);
+
+  batch.update(reviewerRef, {
+    title: draft.title,
+    normalizedTitle: draft.normalizedTitle,
+    subject: draft.subject,
+    category: draft.category,
+    libraryId: draft.libraryId ?? null,
+    libraryName: draft.libraryName ?? null,
+    difficulty: draft.difficulty,
+    status: draft.status,
+    estimatedItems: draft.estimatedItems,
+    masteryScore: difficultyScores[draft.difficulty],
+    questionCounts: draft.questionCounts,
+    sourceMaterialIds: draft.sourceMaterialIds,
+    tags: buildTags(draft.subject, draft.category),
+    generatedQuestions,
+    exportSettings: draft.exportSettings,
+    updatedAt: serverTimestamp(),
+  });
+
+  updateLibraryCountsForReviewerMove({
+    batch,
+    newLibraryId: draft.libraryId,
+    newMaterialCount: draft.sourceMaterialIds.length,
+    oldLibraryId: current.libraryId ?? null,
+    oldMaterialCount: current.sourceMaterialIds.length,
+    userId,
+  });
+
+  await batch.commit();
+
+  return fetchReviewer(reviewerId);
 }
 
 export async function updateReviewerStatus(reviewerId: string, status: ReviewerStatus) {
@@ -368,4 +609,53 @@ export async function updateReviewerStatus(reviewerId: string, status: ReviewerS
     status,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function updateReviewerStudyProgress(
+  reviewerId: string,
+  progress: {
+    correct: number;
+    score: number;
+    total: number;
+  }
+) {
+  const userId = getReviewerUserId();
+  const total = Math.max(0, Math.floor(progress.total));
+  const correct = Math.max(0, Math.min(total, Math.floor(progress.correct)));
+  const score = Math.max(0, Math.min(100, Math.round(progress.score)));
+
+  await updateDoc(doc(reviewersCollection(userId), reviewerId), {
+    lastQuizCorrect: correct,
+    lastQuizScore: score,
+    lastQuizTotal: total,
+    lastStudiedAt: serverTimestamp(),
+    masteryScore: score,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteReviewer(reviewerId: string) {
+  const userId = getReviewerUserId();
+  const db = getReviewerDb();
+  const reviewerRef = doc(reviewersCollection(userId), reviewerId);
+  const currentSnapshot = await getDoc(reviewerRef);
+
+  if (!currentSnapshot.exists()) {
+    return;
+  }
+
+  const current = mapReviewerDocument(currentSnapshot);
+  const batch = writeBatch(db);
+
+  batch.delete(reviewerRef);
+
+  if (current.libraryId) {
+    batch.update(libraryDocument(userId, current.libraryId), {
+      reviewerCount: increment(-1),
+      materialCount: increment(-current.sourceMaterialIds.length),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
 }

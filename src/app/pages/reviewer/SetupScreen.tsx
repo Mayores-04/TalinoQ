@@ -4,26 +4,58 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Info, Search, FileCheck2, Bot, Settings2, Sparkles } from 'lucide-react-native';
 import { FlowHeader, Field, SectionTitle, Segmented, Stepper, SummaryRow } from './reviewerCommon';
 import { styles } from './reviewerStyles';
+import { type LibraryRecord } from '@/lib/libraries';
 
-const categories = ['Midterm Prep', 'Final Exam Prep', 'Board Exam', 'Lecture Review'];
-const subjects = ['Quantum Mechanics', 'Cellular Biology', 'Organic Chemistry', 'Civil Law'];
+type SetupScreenProps = {
+  category: string;
+  categories: string[];
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  estimatedItems: number;
+  libraries: LibraryRecord[];
+  guidanceText: string;
+  selectedLibraryId: string | null;
+  questions: {
+    id: string;
+    title: string;
+    subtitle: string;
+    count: number;
+  }[];
+  subject: string;
+  subjects: string[];
+  title: string;
+  onCategoryChange: (category: string) => void;
+  onDifficultyChange: (difficulty: 'Easy' | 'Medium' | 'Hard') => void;
+  onLibraryChange: (library: LibraryRecord | null) => void;
+  onGenerate: () => void;
+  onBack: () => void;
+  onQuestionCountChange: (id: string, delta: number) => void;
+  onSubjectChange: (subject: string) => void;
+  onTitleChange: (title: string) => void;
+  onAddDocument: () => void;
+};
 
 export default function SetupScreen({
   category,
+  categories,
   difficulty,
   estimatedItems,
+  libraries,
+  guidanceText,
+  selectedLibraryId,
   questions,
   subject,
+  subjects,
   title,
   onCategoryChange,
   onDifficultyChange,
+  onLibraryChange,
   onGenerate,
   onBack,
   onQuestionCountChange,
   onSubjectChange,
   onTitleChange,
   onAddDocument,
-}: any) {
+}: SetupScreenProps) {
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <FlowHeader title="Reviewer Setup" subtitle="Configure AI reviewer" onBack={onBack} />
@@ -35,6 +67,37 @@ export default function SetupScreen({
 
         <SectionTitle icon={<Info size={16} color="#004f4c" />} title="General Information" />
         <Field label="Reviewer Title" value={title} onChangeText={onTitleChange} />
+
+        <Text style={styles.fieldLabel}>Library / Subject Folder</Text>
+        <View style={styles.suggestionRow}>
+          <TouchableOpacity
+            activeOpacity={0.78}
+            onPress={() => onLibraryChange(null)}
+            style={[styles.suggestionChip, !selectedLibraryId && styles.suggestionChipActive]}>
+            <Text
+              style={[styles.suggestionText, !selectedLibraryId && styles.suggestionTextActive]}>
+              No Library
+            </Text>
+          </TouchableOpacity>
+          {libraries.map((library) => (
+            <TouchableOpacity
+              key={library.id}
+              activeOpacity={0.78}
+              onPress={() => onLibraryChange(library)}
+              style={[
+                styles.suggestionChip,
+                selectedLibraryId === library.id && styles.suggestionChipActive,
+              ]}>
+              <Text
+                style={[
+                  styles.suggestionText,
+                  selectedLibraryId === library.id && styles.suggestionTextActive,
+                ]}>
+                {library.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         <Text style={styles.fieldLabel}>Subject</Text>
         <View style={styles.searchField}>
@@ -89,7 +152,7 @@ export default function SetupScreen({
         <Segmented
           options={['Easy', 'Medium', 'Hard']}
           value={difficulty}
-          onChange={(v: string) => onDifficultyChange(v)}
+          onChange={(v: string) => onDifficultyChange(v as 'Easy' | 'Medium' | 'Hard')}
         />
 
         <SectionTitle
@@ -118,8 +181,7 @@ export default function SetupScreen({
             <Text style={styles.guidanceTitle}>AI Guidance</Text>
           </View>
           <Text style={styles.guidanceText}>
-            Based on your recent performance, TalinoQ suggests a higher count of identification
-            questions to master naming conventions.
+            {guidanceText}
           </Text>
           <TouchableOpacity
             activeOpacity={0.82}
