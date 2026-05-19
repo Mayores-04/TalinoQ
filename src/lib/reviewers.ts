@@ -100,6 +100,9 @@ const difficultyScores: Record<ReviewerDifficulty, number> = {
   Hard: 76,
 };
 
+let cachedReviewersUserId: string | null = null;
+let cachedReviewers: ReviewerRecord[] | null = null;
+
 const validDifficulties: ReviewerDifficulty[] = ['Easy', 'Medium', 'Hard'];
 const validFormats: ReviewerExportFormat[] = ['PDF', 'DOCX'];
 
@@ -447,12 +450,19 @@ export function subscribeToReviewers(
     return () => {};
   }
 
+  if (cachedReviewersUserId === userId && cachedReviewers) {
+    onReviewers(cachedReviewers);
+  }
+
   const reviewersQuery = query(reviewersCollection(userId), orderBy('updatedAt', 'desc'));
 
   return onSnapshot(
     reviewersQuery,
     (snapshot) => {
-      onReviewers(snapshot.docs.map(mapReviewerDocument));
+      const nextReviewers = snapshot.docs.map(mapReviewerDocument);
+      cachedReviewersUserId = userId;
+      cachedReviewers = nextReviewers;
+      onReviewers(nextReviewers);
     },
     (error) => {
       onError?.(error.message || 'Unable to load reviewers.');
@@ -460,11 +470,24 @@ export function subscribeToReviewers(
   );
 }
 
+export function getCachedReviewers() {
+  const userId = firebaseAuth?.currentUser?.uid;
+
+  if (!userId || cachedReviewersUserId !== userId) {
+    return null;
+  }
+
+  return cachedReviewers;
+}
+
 export async function fetchReviewers() {
   const userId = getReviewerUserId();
   const reviewersQuery = query(reviewersCollection(userId), orderBy('updatedAt', 'desc'));
   const snapshot = await getDocs(reviewersQuery);
-  return snapshot.docs.map(mapReviewerDocument);
+  const reviewers = snapshot.docs.map(mapReviewerDocument);
+  cachedReviewersUserId = userId;
+  cachedReviewers = reviewers;
+  return reviewers;
 }
 
 export async function createReviewer(input: CreateReviewerInput) {

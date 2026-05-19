@@ -16,49 +16,22 @@ export function AuthTextField({
   ...props
 }: AuthTextFieldProps) {
   return (
-    <View style={{ width: '100%' }}>
+    <View className="w-full">
       {label ? (
-        <Text
-          style={{
-            marginBottom: 8,
-            fontSize: 13,
-            fontWeight: '700',
-            color: '#334155',
-          }}>
-          {label}
-        </Text>
+        <Text className="mb-2 text-[13px] font-bold text-tq-body">{label}</Text>
       ) : null}
 
       <View
-        style={{
-          height: 54,
-          width: '100%',
-          flexDirection: 'row',
-          alignItems: 'center',
-          borderWidth: 1,
-          borderColor: isInvalid ? '#ef4444' : '#cbd5e1',
-          borderRadius: 16,
-          backgroundColor: '#f8fafc',
-          paddingHorizontal: 14,
-        }}>
+        className={`h-[54px] w-full flex-row items-center rounded-2xl border bg-tq-page px-[14px] ${
+          isInvalid ? 'border-red-500' : 'border-slate-300'
+        }`}>
         {Icon ? <Icon size={18} color="#64748b" /> : null}
 
         <TextInput
           {...props}
           placeholderTextColor="#94a3b8"
-          style={[
-            {
-              flex: 1,
-              height: 52,
-              paddingHorizontal: Icon ? 10 : 0,
-              paddingVertical: 0,
-              fontSize: 14,
-              color: '#0f172a',
-              includeFontPadding: false,
-              textAlignVertical: 'center',
-            },
-            style,
-          ]}
+          className={`h-[52px] flex-1 py-0 text-sm text-tq-ink ${Icon ? 'px-2.5' : 'px-0'}`}
+          style={[{ includeFontPadding: false, textAlignVertical: 'center' }, style]}
         />
       </View>
     </View>

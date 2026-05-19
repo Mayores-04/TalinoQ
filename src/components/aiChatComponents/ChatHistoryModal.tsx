@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Check, Clock3, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react-native';
 import type { AiChatRecord } from '@/lib/aiChats';
 import { formatChatDate } from '@/app/pages/aiChat/helpers';
@@ -75,8 +83,8 @@ export function ChatHistoryModal({
 
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
-      <View style={styles.historyBackdrop}>
-        <View style={styles.historySheet}>
+      <Pressable style={styles.historyBackdrop} onPress={onClose}>
+        <View style={styles.historySheet} onStartShouldSetResponder={() => true}>
           <View style={styles.historyHeader}>
             <View>
               <Text style={styles.historyEyebrow}>TalinoQ AI</Text>
@@ -206,7 +214,7 @@ export function ChatHistoryModal({
             </ScrollView>
           )}
         </View>
-      </View>
+      </Pressable>
     </Modal>
   );
 }

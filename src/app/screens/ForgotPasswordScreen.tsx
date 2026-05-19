@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { ArrowLeft, ArrowRight, Mail } from 'lucide-react-native';
 
 import { AuthShell, ScreenFooter } from '@/components/auth/AuthShell';
@@ -43,10 +43,10 @@ export function ForgotPasswordScreen({ onLogin }: ForgotPasswordScreenProps) {
 
   return (
     <AuthShell background="plain" footer={<ScreenFooter>Powered by TalinoQ</ScreenFooter>}>
-      <View className="gap-5 py-8" style={styles.screen}>
+      <View className="w-full max-w-[440px] self-center py-8">
         <Text className="text-center text-4xl font-extrabold text-teal-950">TalinoQ</Text>
 
-        <Card className="gap-5 rounded-3xl p-5">
+        <Card className="mt-5 gap-5 rounded-3xl p-5">
           <View className="gap-2">
             <Text className="text-2xl font-extrabold text-slate-900">Reset Password</Text>
             <Text className="text-sm leading-6 text-slate-600">
@@ -85,11 +85,3 @@ export function ForgotPasswordScreen({ onLogin }: ForgotPasswordScreenProps) {
     </AuthShell>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: 440,
-  },
-});

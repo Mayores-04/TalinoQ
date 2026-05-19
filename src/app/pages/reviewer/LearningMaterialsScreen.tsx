@@ -56,8 +56,8 @@ export default function LearningMaterialsScreen({
   const [materials, setMaterials] = useState<MaterialPreview[]>([]);
 
   useEffect(() => {
-    return subscribeToLearningMaterials(setMaterials);
-  }, []);
+    return subscribeToLearningMaterials(libraryId ?? null, setMaterials);
+  }, [libraryId]);
 
   const pushMaterial = (item: MaterialPreview) => {
     setMaterials((current) => [item, ...current].slice(0, 6));
@@ -135,10 +135,12 @@ export default function LearningMaterialsScreen({
           ? await extractPdfTextFromRemote(savedMaterial.remoteUrl)
           : null;
       const extractedText = remoteExtraction?.text || extraction.extractedText;
-      const extractionMessage =
-        remoteExtraction?.text
-          ? 'I extracted readable text from this PDF.'
-          : remoteExtraction?.warning || extraction.extractionMessage;
+      const extractionMessage = getReadableExtractionMessage({
+        localMessage: extraction.extractionMessage,
+        remoteWarning: remoteExtraction?.warning,
+        sourceType: extraction.sourceType,
+        text: extractedText,
+      });
 
       if (remoteExtraction) {
         await updateLearningMaterial(savedMaterial.id, {
@@ -454,6 +456,34 @@ export default function LearningMaterialsScreen({
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function getReadableExtractionMessage({
+  localMessage,
+  remoteWarning,
+  sourceType,
+  text,
+}: {
+  localMessage: string;
+  remoteWarning?: string;
+  sourceType?: string;
+  text?: string;
+}) {
+  if (text?.trim()) {
+    return sourceType === 'pdf'
+      ? 'I extracted readable text from this PDF.'
+      : 'I extracted readable text from this material.';
+  }
+
+  if (sourceType === 'pdf' && remoteWarning?.toLowerCase().includes('download')) {
+    return 'PDF saved. I could not extract selectable text yet, so try a clearer PDF or paste notes for better AI questions.';
+  }
+
+  return (
+    remoteWarning ||
+    localMessage ||
+    'Material saved, but no readable text was extracted from it yet.'
   );
 }
 

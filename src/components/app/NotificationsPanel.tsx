@@ -1,99 +1,201 @@
-import React from 'react';
+import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import { BookOpenCheck, AlertTriangle, Cloud, Sparkles } from 'lucide-react-native';
+import {
+  AlertTriangle,
+  BookOpenCheck,
+  Sparkles,
+  Bot,
+  FileText,
+  Library,
+} from 'lucide-react-native';
 import { Box, HStack, VStack } from '@/components/ui/box';
-import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
+import { useLiveNotifications, type AppNotificationRoute } from '@/hooks/useLiveNotifications';
+import type { AppNotification } from '@/lib/appNotifications';
 
-export function NotificationsPanel() {
-  const initialLoading = useSkeletonLoading();
-  const { refreshing, refresh } = usePullToRefresh();
-  const isLoading = initialLoading || refreshing;
+type NotificationsPanelProps = {
+  onOpenRoute: (route: AppNotificationRoute) => void;
+};
+
+type NotificationFilter =
+  | 'all'
+  | 'unread'
+  | 'insight'
+  | 'library'
+  | 'material'
+  | 'reviewer'
+  | 'chat';
+
+const filterOptions: Array<{ label: string; value: NotificationFilter }> = [
+  { label: 'All', value: 'all' },
+  { label: 'Unread', value: 'unread' },
+  { label: 'Chats', value: 'chat' },
+  { label: 'Reviewers', value: 'reviewer' },
+  { label: 'Materials', value: 'material' },
+  { label: 'Libraries', value: 'library' },
+  { label: 'Insights', value: 'insight' },
+];
+
+export function NotificationsPanel({ onOpenRoute }: NotificationsPanelProps) {
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
+
+  const { refreshing, refresh } = usePullToRefresh({
+    onRefresh: () => setRefreshNonce((value) => value + 1),
+  });
+  const {
+    hasLoadedAll,
+    markAllAsRead,
+    markNotificationAsRead,
+    notifications,
+    summarySubtitle,
+    summaryTitle,
+    unreadCount,
+  } = useLiveNotifications(refreshNonce);
+
+  const filteredNotifications = useMemo(() => {
+    if (activeFilter === 'all') {
+      return notifications;
+    }
+
+    if (activeFilter === 'unread') {
+      return notifications.filter((notification) => notification.unread);
+    }
+
+    return notifications.filter((notification) => notification.kind === activeFilter);
+  }, [activeFilter, notifications]);
 
   return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.panelContent}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={refresh}
-          tintColor="#004f4c"
-          colors={['#004f4c']}
-        />
-      }>
-      {isLoading ? (
-        <NotificationsSkeleton />
-      ) : (
-        <>
-          <View style={styles.notificationSummary}>
-            <View>
-              <Text style={styles.summaryTitle}>3 new study updates</Text>
-              <Text style={styles.summarySubtitle}>
-                Your reviewers, weak topics, and cloud sync are current.
+    <View style={styles.panelRoot}>
+      <View style={styles.notificationSummary}>
+        <View style={styles.summaryTextBlock}>
+          <Text style={styles.summaryTitle}>{summaryTitle}</Text>
+          <Text style={styles.summarySubtitle}>{summarySubtitle}</Text>
+        </View>
+        <View style={styles.summaryBadge}>
+          <Sparkles size={17} color="#ffffff" />
+        </View>
+      </View>
+
+      <View style={styles.filtersHeader}>
+        <Text style={styles.filtersTitle}>Filter</Text>
+        <TouchableOpacity
+          activeOpacity={0.84}
+          onPress={markAllAsRead}
+          disabled={unreadCount === 0}
+          style={[styles.readAllButton, unreadCount === 0 && styles.readAllButtonDisabled]}>
+          <Text
+            style={[
+              styles.readAllButtonText,
+              unreadCount === 0 && styles.readAllButtonTextDisabled,
+            ]}>
+            Read all
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterRow}>
+        {filterOptions.map((option) => {
+          const active = activeFilter === option.value;
+
+          return (
+            <TouchableOpacity
+              key={option.value}
+              activeOpacity={0.85}
+              onPress={() => setActiveFilter(option.value)}
+              style={[styles.filterChip, active && styles.filterChipActive]}>
+              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                {option.label}
               </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <ScrollView
+        style={styles.listScroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor="#004f4c"
+            colors={['#004f4c']}
+          />
+        }>
+        {!hasLoadedAll ? (
+          <View style={styles.loadingCard}>
+            <View style={styles.loadingIcon}>
+              <Sparkles size={16} color="#004f4c" />
             </View>
-            <View style={styles.summaryBadge}>
-              <Sparkles size={17} color="#ffffff" />
+            <View style={styles.loadingTextBlock}>
+              <Text style={styles.loadingTitle}>Syncing live updates</Text>
+              <Text style={styles.loadingSubtitle}>Pulling your latest Firestore data now.</Text>
             </View>
           </View>
+        ) : notifications.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Sparkles size={24} color="#004f4c" />
+            <Text style={styles.emptyStateTitle}>No notifications yet</Text>
+            <Text style={styles.emptyStateText}>
+              Create a reviewer, save a material, or continue studying to see live updates here.
+            </Text>
+          </View>
+        ) : filteredNotifications.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Sparkles size={24} color="#004f4c" />
+            <Text style={styles.emptyStateTitle}>No matches</Text>
+            <Text style={styles.emptyStateText}>
+              Try another filter or tap Read all to clear the unread items.
+            </Text>
+          </View>
+        ) : (
+          filteredNotifications.map((notification) => (
+            <ChromeNotificationItem
+              key={notification.id}
+              icon={getNotificationIcon(notification)}
+              title={notification.title}
+              subtitle={notification.subtitle}
+              time={notification.timeLabel}
+              tone={notification.tone}
+              actionLabel={notification.actionLabel}
+              unread={notification.unread}
+              onPress={() => {
+                try {
+                  markNotificationAsRead(notification.id);
+                } catch {
+                  // ignore
+                }
 
-          <ChromeNotificationItem
-            icon={<BookOpenCheck size={18} color="#004f4c" />}
-            title="Review session ready"
-            subtitle="Your latest reviewer is synced and ready to continue."
-            time="2m ago"
-            tone="#14b8a6"
-            actionLabel="Open"
-            unread
-          />
-          <ChromeNotificationItem
-            icon={<AlertTriangle size={18} color="#b45309" />}
-            title="Weak topic detected"
-            subtitle="Cell respiration still needs another pass."
-            time="18m ago"
-            tone="#ee845e"
-            actionLabel="Review"
-            unread
-          />
-          <ChromeNotificationItem
-            icon={<Cloud size={18} color="#006f6a" />}
-            title="Backup complete"
-            subtitle="Your study data has been saved to the cloud."
-            time="Today"
-            tone="#42d8e7"
-            actionLabel="Details"
-          />
-        </>
-      )}
-    </ScrollView>
+                onOpenRoute(notification.targetRoute);
+              }}
+            />
+          ))
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
-function NotificationsSkeleton() {
-  return (
-    <View style={styles.skeletonWrap}>
-      <View style={styles.notificationSummary}>
-        <View style={styles.notificationTextBlock}>
-          <LoadingSkeleton height={18} width="62%" radius={8} />
-          <LoadingSkeleton height={13} width="90%" radius={6} style={styles.skeletonTextGap} />
-        </View>
-        <LoadingSkeleton height={40} width={40} radius={999} />
-      </View>
-
-      {Array.from({ length: 3 }).map((_, index) => (
-        <View key={index} style={styles.notificationItem}>
-          <LoadingSkeleton height={42} width={42} radius={12} />
-          <View style={styles.notificationTextBlock}>
-            <LoadingSkeleton height={17} width="68%" radius={8} />
-            <LoadingSkeleton height={13} width="96%" radius={6} style={styles.skeletonTextGap} />
-            <LoadingSkeleton height={11} width="48%" radius={5} style={styles.skeletonFooterGap} />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
+function getNotificationIcon(notification: AppNotification) {
+  switch (notification.kind) {
+    case 'insight':
+      return <AlertTriangle size={18} color="#b45309" />;
+    case 'library':
+      return <Library size={18} color="#004f4c" />;
+    case 'material':
+      return <FileText size={18} color="#006f6a" />;
+    case 'reviewer':
+      return <BookOpenCheck size={18} color="#004f4c" />;
+    case 'chat':
+    default:
+      return <Bot size={18} color="#0f766e" />;
+  }
 }
 
 export function ChromeNotificationItem({
@@ -104,6 +206,7 @@ export function ChromeNotificationItem({
   subtitle,
   time,
   tone,
+  onPress,
 }: {
   actionLabel: string;
   icon: React.ReactNode;
@@ -112,10 +215,12 @@ export function ChromeNotificationItem({
   subtitle: string;
   time: string;
   tone: string;
+  onPress?: () => void;
 }) {
   return (
     <TouchableOpacity
       activeOpacity={0.84}
+      onPress={onPress}
       style={[styles.notificationItem, unread && styles.notificationItemUnread]}>
       <Box style={[styles.notificationAccent, { backgroundColor: tone }]} />
 
@@ -141,12 +246,75 @@ export function ChromeNotificationItem({
 }
 
 const styles = StyleSheet.create({
-  panelContent: {
+  panelRoot: {
+    flex: 1,
+  },
+  listScroll: {
+    flex: 1,
+  },
+  listContent: {
     paddingBottom: 12,
     gap: 12,
   },
-  skeletonWrap: {
-    gap: 12,
+  filtersHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  filtersTitle: {
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  readAllButton: {
+    backgroundColor: '#e6fbf8',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  readAllButtonDisabled: {
+    backgroundColor: '#f1f5f9',
+  },
+  readAllButtonText: {
+    color: '#006f6a',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  readAllButtonTextDisabled: {
+    color: '#94a3b8',
+  },
+  filterRow: {
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 2,
+    paddingRight: 4,
+  },
+  filterScroll: {
+    flexGrow: 0,
+    height: 52,
+    marginBottom: 2,
+  },
+  filterChip: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    borderRadius: 999,
+    borderWidth: 1,
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  filterChipActive: {
+    backgroundColor: '#004f4c',
+    borderColor: '#004f4c',
+  },
+  filterChipText: {
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  filterChipTextActive: {
+    color: '#ffffff',
   },
   notificationSummary: {
     alignItems: 'center',
@@ -157,6 +325,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
     padding: 16,
+  },
+  summaryTextBlock: {
+    flex: 1,
   },
   summaryTitle: {
     color: '#004f4c',
@@ -176,6 +347,57 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     width: 40,
+  },
+  loadingCard: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe8ee',
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 16,
+  },
+  loadingIcon: {
+    alignItems: 'center',
+    backgroundColor: '#eefafa',
+    borderRadius: 999,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  loadingTextBlock: {
+    flex: 1,
+  },
+  loadingTitle: {
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  loadingSubtitle: {
+    color: '#64748b',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  emptyState: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe8ee',
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 8,
+    padding: 20,
+  },
+  emptyStateTitle: {
+    color: '#004f4c',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  emptyStateText: {
+    color: '#64748b',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   notificationItem: {
     alignItems: 'flex-start',
@@ -210,12 +432,6 @@ const styles = StyleSheet.create({
     height: 42,
     justifyContent: 'center',
     width: 42,
-  },
-  notificationDot: {
-    marginTop: 5,
-    height: 12,
-    width: 12,
-    borderRadius: 999,
   },
   notificationTextBlock: {
     flex: 1,
@@ -263,12 +479,6 @@ const styles = StyleSheet.create({
     color: '#004f4c',
     fontSize: 10,
     fontWeight: '900',
-  },
-  skeletonTextGap: {
-    marginTop: 7,
-  },
-  skeletonFooterGap: {
-    marginTop: 16,
   },
 });
 

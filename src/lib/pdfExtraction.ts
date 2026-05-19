@@ -2,6 +2,11 @@ import * as FileSystem from 'expo-file-system';
 import { firebaseAuth } from '@/lib/firebase';
 
 export type RemotePdfExtractionResult = {
+  diagnostics?: {
+    bytes?: number;
+    method?: 'base64' | 'fileUrl';
+    status?: number;
+  };
   text: string;
   warning?: string;
 };
@@ -33,9 +38,22 @@ export async function extractPdfTextFromLocal(input: {
     };
   }
 
-  const base64 = await FileSystem.readAsStringAsync(input.uri, {
-    encoding: 'base64',
-  });
+  let base64 = '';
+
+  try {
+    base64 = await FileSystem.readAsStringAsync(input.uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+  } catch (error) {
+    return {
+      diagnostics: { method: 'base64' },
+      text: '',
+      warning:
+        error instanceof Error
+          ? `PDF saved, but TalinoQ could not read the local PDF copy: ${error.message}`
+          : 'PDF saved, but TalinoQ could not read the local PDF copy.',
+    };
+  }
 
   return requestPdfExtraction({
     base64,
@@ -53,7 +71,8 @@ async function requestPdfExtraction(body: {
   if (!proxyUrl) {
     return {
       text: '',
-      warning: 'PDF uploaded, but the AI proxy URL is missing for PDF text extraction.',
+      diagnostics: { method: body.base64 ? 'base64' : 'fileUrl' },
+      warning: 'PDF saved, but the AI proxy URL is missing for PDF text extraction.',
     };
   }
 
@@ -62,7 +81,8 @@ async function requestPdfExtraction(body: {
   if (!currentUser) {
     return {
       text: '',
-      warning: 'PDF uploaded, but sign in again before extracting its text.',
+      diagnostics: { method: body.base64 ? 'base64' : 'fileUrl' },
+      warning: 'PDF saved, but sign in again before extracting its text.',
     };
   }
 
@@ -79,13 +99,27 @@ async function requestPdfExtraction(body: {
   const payload = await readPdfExtractionPayload(response);
 
   if (!response.ok) {
+    const message = payload.error || 'PDF uploaded, but text extraction failed.';
+
     return {
       text: '',
-      warning: payload.error || 'PDF uploaded, but text extraction failed.',
+      diagnostics: {
+        bytes: payload.bytes,
+        method: body.base64 ? 'base64' : 'fileUrl',
+        status: response.status,
+      },
+      warning: message.toLowerCase().includes('download')
+        ? 'PDF saved, but TalinoQ could not read selectable text from the uploaded copy yet.'
+        : message,
     };
   }
 
   return {
+    diagnostics: {
+      bytes: payload.bytes,
+      method: body.base64 ? 'base64' : 'fileUrl',
+      status: response.status,
+    },
     text: payload.text?.trim() ?? '',
     warning: payload.warning,
   };
@@ -93,7 +127,10 @@ async function requestPdfExtraction(body: {
 
 async function readPdfExtractionPayload(response: Response) {
   try {
-    return (await response.json()) as Partial<RemotePdfExtractionResult> & { error?: string };
+    return (await response.json()) as Partial<RemotePdfExtractionResult> & {
+      bytes?: number;
+      error?: string;
+    };
   } catch {
     return {};
   }

@@ -1,26 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Animated,
-  Easing,
-  PanResponder,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BarChart3, Bot, FileText, Home, Plus } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { AuthRoute } from '@/app/screens/AuthFlow';
-import {
-  getAiChatDragReminderEnabled,
-  subscribeToAiChatDragReminderPreference,
-} from '@/lib/preferences';
 
 type AppBottomNavProps = {
   currentRoute: AuthRoute;
   onNavigate: (route: AuthRoute) => void;
+  pageBackgroundColor?: string;
 };
 
 type NavItemConfig = {
@@ -46,382 +34,293 @@ const navItems: NavItemConfig[] = [
     icon: (color) => <Plus size={19} color={color} />,
   },
   {
+    label: 'Chatbot',
+    route: 'ai-chat',
+    icon: (color) => <Bot size={18} color={color} />,
+  },
+  {
     label: 'Progress',
     route: 'progress',
     icon: (color) => <BarChart3 size={18} color={color} />,
   },
 ];
+const sideNavItems = navItems.filter((item) => item.route !== 'create-reviewer');
+const createNavItem = navItems.find((item) => item.route === 'create-reviewer')!;
 
-export function AppBottomNav({ currentRoute, onNavigate }: AppBottomNavProps) {
+export function AppBottomNav({ currentRoute, onNavigate, pageBackgroundColor }: AppBottomNavProps) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-
-  const position = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const lastPosition = useRef({ x: 0, y: 0 });
-
-  const waveTranslateX = useRef(new Animated.Value(0)).current;
-  const dropletScale = useRef(new Animated.Value(0.75)).current;
-  const dropletOpacity = useRef(new Animated.Value(0)).current;
-  const wavePulse = useRef(new Animated.Value(1)).current;
-
-  const [showDragReminder, setShowDragReminder] = useState(false);
-  const [navWidth, setNavWidth] = useState(0);
-
-  const activeIndex = Math.max(
-    0,
-    navItems.findIndex((item) => item.route === currentRoute)
-  );
-
-  const itemWidth = navWidth > 0 ? navWidth / navItems.length : 0;
-
-  const bounds = useMemo(
-    () => ({
-      maxX: 0,
-      maxY: 38,
-      minX: -Math.max(0, width - 106),
-      minY: -150,
-    }),
-    [width]
-  );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4,
-        onPanResponderMove: (_, gesture) => {
-          position.setValue({
-            x: clamp(lastPosition.current.x + gesture.dx, bounds.minX, bounds.maxX),
-            y: clamp(lastPosition.current.y + gesture.dy, bounds.minY, bounds.maxY),
-          });
-        },
-        onPanResponderRelease: (_, gesture) => {
-          const nextPosition = {
-            x: clamp(lastPosition.current.x + gesture.dx, bounds.minX, bounds.maxX),
-            y: clamp(lastPosition.current.y + gesture.dy, bounds.minY, bounds.maxY),
-          };
-
-          lastPosition.current = nextPosition;
-          position.setValue(nextPosition);
-        },
-        onPanResponderTerminate: (_, gesture) => {
-          const nextPosition = {
-            x: clamp(lastPosition.current.x + gesture.dx, bounds.minX, bounds.maxX),
-            y: clamp(lastPosition.current.y + gesture.dy, bounds.minY, bounds.maxY),
-          };
-
-          lastPosition.current = nextPosition;
-          position.setValue(nextPosition);
-        },
-      }),
-    [bounds, position]
-  );
+  const createActive = currentRoute === createNavItem.route;
+  const createAnim = useRef(new Animated.Value(createActive ? 1 : 0)).current;
 
   useEffect(() => {
-    if (!itemWidth) return;
-
-    Animated.parallel([
-      Animated.spring(waveTranslateX, {
-        toValue: activeIndex * itemWidth,
-        useNativeDriver: true,
-        speed: 14,
-        bounciness: 9,
-      }),
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(dropletOpacity, {
-            toValue: 1,
-            duration: 120,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(dropletScale, {
-            toValue: 1.18,
-            duration: 180,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(wavePulse, {
-            toValue: 1.08,
-            duration: 180,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(dropletOpacity, {
-            toValue: 0,
-            duration: 260,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(dropletScale, {
-            toValue: 1.65,
-            duration: 260,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.spring(wavePulse, {
-            toValue: 1,
-            useNativeDriver: true,
-            speed: 16,
-            bounciness: 7,
-          }),
-        ]),
-      ]),
-    ]).start(() => {
-      dropletScale.setValue(0.75);
-    });
-  }, [activeIndex, itemWidth, waveTranslateX, dropletOpacity, dropletScale, wavePulse]);
-
-  useEffect(() => {
-    let hideTimer: ReturnType<typeof setTimeout> | undefined;
-    let isMounted = true;
-
-    const showReminder = (enabled: boolean) => {
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-      }
-
-      if (!isMounted || !enabled) {
-        setShowDragReminder(false);
-        return;
-      }
-
-      setShowDragReminder(true);
-      hideTimer = setTimeout(() => {
-        setShowDragReminder(false);
-      }, 5000);
-    };
-
-    getAiChatDragReminderEnabled().then(showReminder);
-
-    const unsubscribe = subscribeToAiChatDragReminderPreference(showReminder);
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-      }
-    };
-  }, []);
+    Animated.spring(createAnim, {
+      friction: 7,
+      tension: 120,
+      toValue: createActive ? 1 : 0,
+      useNativeDriver: true,
+    }).start();
+  }, [createActive, createAnim]);
 
   return (
-    <View style={[styles.wrap, { paddingBottom: Math.max(10, insets.bottom + 8) }]}>
-      <Animated.View
-        {...panResponder.panHandlers}
-        style={[styles.aiDragWrap, { transform: position.getTranslateTransform() }]}>
-        {showDragReminder ? (
-          <View pointerEvents="none" style={styles.dragReminder}>
-            <Text style={styles.dragReminderTitle}>Tip</Text>
-            <Text style={styles.dragReminderText}>Drag the AI button anywhere nearby.</Text>
+    <View
+      style={[
+        styles.wrap,
+        {
+          backgroundColor: pageBackgroundColor ?? 'transparent',
+          paddingBottom: Math.max(10, insets.bottom + 8),
+        },
+      ]}>
+      <View style={styles.nav}>
+        <View style={styles.navInner}>
+          <View style={styles.leftNavGroup}>
+            {sideNavItems.slice(0, 2).map((item) => {
+              const active = item.route === currentRoute;
+              const color = active ? '#004f4c' : '#64748b';
+
+              return (
+                <NavSideItem
+                  key={item.route}
+                  active={active}
+                  color={color}
+                  item={item}
+                  onNavigate={onNavigate}
+                />
+              );
+            })}
           </View>
-        ) : null}
 
-        <TouchableOpacity
-          activeOpacity={0.86}
-          accessibilityRole="button"
-          accessibilityLabel="AI Chat"
-          onPress={() => onNavigate('ai-chat')}
-          style={styles.aiButton}>
-          <Bot size={24} color="#ffffff" />
-        </TouchableOpacity>
-      </Animated.View>
+          <View pointerEvents="box-none" style={styles.centerCreateLayer}>
+            <View pointerEvents="box-none" style={styles.centerCreateWrap}>
+              <Animated.View
+                style={{
+                  transform: [
+                    {
+                      translateY: createAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, -2],
+                      }),
+                    },
+                    {
+                      scale: createAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 1.04],
+                      }),
+                    },
+                  ],
+                }}>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  accessibilityRole="button"
+                  accessibilityLabel={createNavItem.label}
+                  onPress={() => onNavigate(createNavItem.route)}
+                  style={[styles.createFab, createActive && styles.createFabActive]}>
+                  <Plus size={28} color="#ffffff" strokeWidth={2.7} />
+                </TouchableOpacity>
+              </Animated.View>
+              <Text
+                allowFontScaling={false}
+                numberOfLines={1}
+                style={[styles.createLabel, createActive && styles.navLabelActive]}>
+                Create
+              </Text>
+            </View>
+          </View>
 
-      <View style={styles.nav} onLayout={(event) => setNavWidth(event.nativeEvent.layout.width)}>
-        {itemWidth > 0 ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.waveTrack,
-              {
-                width: itemWidth,
-                transform: [
-                  { translateX: waveTranslateX },
-                  { scaleX: wavePulse },
-                  { scaleY: wavePulse },
-                ],
-              },
-            ]}>
-            <View style={styles.waveBlob} />
-            <View style={styles.waveBubbleOne} />
-            <View style={styles.waveBubbleTwo} />
+          <View style={styles.rightNavGroup}>
+            {sideNavItems.slice(2).map((item) => {
+              const active = item.route === currentRoute;
+              const color = active ? '#004f4c' : '#64748b';
 
-            <Animated.View
-              style={[
-                styles.waterDrop,
-                {
-                  opacity: dropletOpacity,
-                  transform: [{ scale: dropletScale }],
-                },
-              ]}
-            />
-          </Animated.View>
-        ) : null}
-
-        {navItems.map((item) => {
-          const active = item.route === currentRoute;
-          const color = active ? '#004f4c' : '#64748b';
-
-          return (
-            <TouchableOpacity
-              key={item.route}
-              activeOpacity={0.82}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              onPress={() => onNavigate(item.route)}
-              style={styles.navItem}>
-              {item.icon(color)}
-              <Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
+              return (
+                <NavSideItem
+                  key={item.route}
+                  active={active}
+                  color={color}
+                  item={item}
+                  onNavigate={onNavigate}
+                />
+              );
+            })}
+          </View>
+        </View>
       </View>
     </View>
   );
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
+function NavSideItem({
+  active,
+  color,
+  item,
+  onNavigate,
+}: {
+  active: boolean;
+  color: string;
+  item: NavItemConfig;
+  onNavigate: (route: AuthRoute) => void;
+}) {
+  const activeAnim = useRef(new Animated.Value(active ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(activeAnim, {
+      friction: 8,
+      tension: 120,
+      toValue: active ? 1 : 0,
+      useNativeDriver: true,
+    }).start();
+  }, [active, activeAnim]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.82}
+      accessibilityRole="button"
+      accessibilityLabel={item.label}
+      onPress={() => onNavigate(item.route)}
+      style={styles.navItem}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.navItemActivePill,
+          {
+            opacity: activeAnim,
+            transform: [
+              {
+                scale: activeAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.86, 1],
+                }),
+              },
+            ],
+          },
+        ]}
+      />
+      {item.icon(color)}
+      <Text
+        allowFontScaling={false}
+        numberOfLines={1}
+        style={[styles.navLabel, active && styles.navLabelActive]}>
+        {item.label}
+      </Text>
+    </TouchableOpacity>
+  );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 10,
-    paddingTop: 8,
-  },
-  aiDragWrap: {
+    backgroundColor: 'transparent',
+    bottom: 0,
+    elevation: 20,
+    left: 0,
+    paddingHorizontal: 14,
     position: 'absolute',
-    right: 24,
-    top: -60,
-    zIndex: 2,
+    right: 0,
+    zIndex: 20,
   },
-  aiButton: {
+  nav: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  navInner: {
+    alignItems: 'center',
+    backgroundColor: 'rgb(255, 255, 255)',
+    borderColor: 'rgba(148, 163, 184, 0.18)',
+    borderRadius: 34,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 76,
+    overflow: 'visible',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    position: 'relative',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.12,
+    shadowRadius: 22,
+    elevation: 9,
+  },
+  leftNavGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 4,
+    paddingRight: 44,
+  },
+  rightNavGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 4,
+    justifyContent: 'flex-end',
+    paddingLeft: 44,
+  },
+  centerCreateLayer: {
+    alignItems: 'center',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 3,
+  },
+  centerCreateWrap: {
+    alignItems: 'center',
+    bottom: 8,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    zIndex: 3,
+  },
+  createFab: {
     alignItems: 'center',
     backgroundColor: '#004f4c',
     borderColor: '#ffffff',
     borderRadius: 999,
-    borderWidth: 4,
-    elevation: 9,
-    height: 60,
+    borderWidth: 5,
+    elevation: 12,
+    height: 70,
     justifyContent: 'center',
     shadowColor: '#004f4c',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    width: 60,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    width: 70,
   },
-  dragReminder: {
-    backgroundColor: '#ffffff',
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-    borderRadius: 12,
-    borderWidth: 1,
-    bottom: 68,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    position: 'absolute',
-    right: 0,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    width: 184,
-    elevation: 6,
+  createFabActive: {
+    backgroundColor: '#006c67',
   },
-  dragReminderTitle: {
-    color: '#004f4c',
+  createLabel: {
+    color: '#64748b',
     fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  dragReminderText: {
-    color: '#334155',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 15,
-    marginTop: 3,
-  },
-  nav: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    borderColor: 'rgba(148, 163, 184, 0.18)',
-    borderRadius: 28,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-    position: 'relative',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    elevation: 5,
-  },
-  waveTrack: {
-    bottom: 6,
-    left: 0,
-    position: 'absolute',
-    top: 6,
-    zIndex: 0,
-  },
-  waveBlob: {
-    backgroundColor: '#d9fbff',
-    borderColor: 'rgba(0, 79, 76, 0.08)',
-    borderRadius: 999,
-    borderWidth: 1,
-    bottom: 0,
-    left: 6,
-    position: 'absolute',
-    right: 6,
-    top: 0,
-  },
-  waveBubbleOne: {
-    backgroundColor: '#bff5fb',
-    borderRadius: 999,
-    height: 18,
-    opacity: 0.7,
-    position: 'absolute',
-    right: 15,
-    top: 5,
-    width: 18,
-  },
-  waveBubbleTwo: {
-    backgroundColor: '#effeff',
-    borderRadius: 999,
-    bottom: 8,
-    height: 10,
-    opacity: 0.9,
-    position: 'absolute',
-    left: 18,
-    width: 10,
-  },
-  waterDrop: {
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0, 79, 76, 0.12)',
-    borderRadius: 999,
-    height: 44,
     marginTop: 2,
-    width: 44,
   },
   navItem: {
     alignItems: 'center',
     borderRadius: 999,
     flex: 1,
-    minHeight: 58,
+    height: 56,
     justifyContent: 'center',
-    paddingHorizontal: 4,
-    paddingVertical: 7,
+    minWidth: 58,
+    overflow: 'hidden',
+    paddingHorizontal: 5,
+    paddingVertical: 8,
     zIndex: 1,
+  },
+  navItemActivePill: {
+    backgroundColor: '#d9fbff',
+    borderRadius: 999,
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
   navLabel: {
     color: '#64748b',
     fontSize: 9,
-    fontWeight: '800',
-    marginTop: 2,
+    fontWeight: '900',
+    marginTop: 3,
   },
   navLabelActive: {
     color: '#004f4c',

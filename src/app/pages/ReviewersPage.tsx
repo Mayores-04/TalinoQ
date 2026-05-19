@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   BookOpen,
   Bot,
@@ -26,12 +25,13 @@ import {
   Search,
 } from 'lucide-react-native';
 
+import { AppScreen } from '@/components/layout/AppScreen';
 import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
 import {
   createLibrary,
   deleteLibrary,
+  getCachedLibraries,
   subscribeToLibraries,
   updateLibrary,
   type LibraryColor,
@@ -39,6 +39,7 @@ import {
 } from '@/lib/libraries';
 import {
   deleteReviewer,
+  getCachedReviewers,
   subscribeToReviewers,
   updateReviewer,
   type ReviewerRecord,
@@ -74,21 +75,22 @@ export function ReviewersPage({
   onOpenCreate,
   onStudyModeChange,
 }: ReviewersPageProps) {
+  const cachedLibraries = getCachedLibraries();
+  const cachedReviewers = getCachedReviewers();
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState(filters[0]);
-  const [libraries, setLibraries] = useState<LibraryRecord[]>([]);
-  const [reviewers, setReviewers] = useState<ReviewerRecord[]>([]);
+  const [libraries, setLibraries] = useState<LibraryRecord[]>(() => cachedLibraries ?? []);
+  const [reviewers, setReviewers] = useState<ReviewerRecord[]>(() => cachedReviewers ?? []);
   const [selectedReviewer, setSelectedReviewer] = useState<ReviewerRecord | null>(null);
   const [studyReviewer, setStudyReviewer] = useState<ReviewerRecord | null>(null);
   const [studyMode, setStudyMode] = useState<ReviewerStudyMode>('quiz');
   const [selectedLibrary, setSelectedLibrary] = useState<LibraryRecord | null>(null);
   const [libraryModalOpen, setLibraryModalOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [reviewersLoading, setReviewersLoading] = useState(true);
-  const [librariesLoading, setLibrariesLoading] = useState(true);
-  const initialLoading = useSkeletonLoading();
+  const [reviewersLoading, setReviewersLoading] = useState(!cachedReviewers);
+  const [librariesLoading, setLibrariesLoading] = useState(!cachedLibraries);
   const { refreshing, refresh } = usePullToRefresh();
-  const isLoading = reviewersLoading || librariesLoading || initialLoading || refreshing;
+  const isLoading = reviewersLoading || librariesLoading;
   const openCreate = onOpenCreate ?? onCreateReviewer;
 
   const openStudy = (reviewer: ReviewerRecord, mode: ReviewerStudyMode) => {
@@ -150,18 +152,19 @@ export function ReviewersPage({
   }
 
   return (
-    <SafeAreaView edges={[]} style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
-            tintColor="#004f4c"
-            colors={['#004f4c']}
-          />
-        }
-        showsVerticalScrollIndicator={false}>
+    <>
+      <AppScreen
+        scroll
+        scrollProps={{
+          refreshControl: (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              tintColor="#004f4c"
+              colors={['#004f4c']}
+            />
+          ),
+        }}>
         <View style={styles.titleRow}>
           <View>
             <Text style={styles.title}>Reviewers</Text>
@@ -219,6 +222,7 @@ export function ReviewersPage({
 
         <ScrollView
           horizontal
+          style={styles.filterScroll}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}>
           {filters.map((filter) => (
@@ -227,7 +231,9 @@ export function ReviewersPage({
               activeOpacity={0.84}
               onPress={() => setActiveFilter(filter)}
               style={[styles.filterChip, activeFilter === filter && styles.filterChipActive]}>
-              <Text style={[styles.filterText, activeFilter === filter && styles.filterTextActive]}>
+              <Text
+                numberOfLines={1}
+                style={[styles.filterText, activeFilter === filter && styles.filterTextActive]}>
                 {filter}
               </Text>
             </TouchableOpacity>
@@ -285,7 +291,7 @@ export function ReviewersPage({
             )}
           </View>
         )}
-      </ScrollView>
+      </AppScreen>
 
       <LibraryModal
         library={selectedLibrary}
@@ -304,7 +310,7 @@ export function ReviewersPage({
         onOpenStudy={openStudy}
         onUpdated={setSelectedReviewer}
       />
-    </SafeAreaView>
+    </>
   );
 }
 
@@ -519,6 +525,13 @@ function LibrarySectionCard({
               onPress={() => onOpenReviewer(reviewer)}
             />
           ))}
+          <TouchableOpacity
+            activeOpacity={0.84}
+            onPress={onCreateReviewer}
+            style={styles.addReviewerInlineButton}>
+            <Plus size={14} color="#004f4c" />
+            <Text style={styles.addReviewerInlineText}>Add Reviewer</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.emptyFolderInline}>
@@ -1053,15 +1066,6 @@ function formatUpdatedAt(reviewer: ReviewerRecord) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: '#f7f9ff',
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 120,
-    paddingHorizontal: 18,
-    paddingTop: 16,
-  },
   titleRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1155,11 +1159,19 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     gap: 8,
+    paddingBottom: 2,
+    paddingRight: 18,
     paddingTop: 15,
   },
+  filterScroll: {
+    flexGrow: 0,
+  },
   filterChip: {
+    alignItems: 'center',
     backgroundColor: '#f1f6fb',
     borderRadius: 999,
+    justifyContent: 'center',
+    minHeight: 38,
     paddingHorizontal: 15,
     paddingVertical: 9,
   },
@@ -1248,6 +1260,23 @@ const styles = StyleSheet.create({
   nestedReviewers: {
     gap: 10,
     marginTop: 12,
+  },
+  addReviewerInlineButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#e9fbf8',
+    borderColor: '#c6f0ea',
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  addReviewerInlineText: {
+    color: '#004f4c',
+    fontSize: 10,
+    fontWeight: '900',
   },
   unfiledSection: {
     gap: 10,

@@ -1,5 +1,13 @@
-import React from 'react';
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  Easing,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FileCheck2, Check, Zap } from 'lucide-react-native';
 import { FlowHeader, Tag } from './reviewerCommon';
@@ -30,6 +38,33 @@ export default function ExtractionScreen({
   onContinue: () => void;
   onRescan: () => void;
 }) {
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.timing(spin, {
+        duration: 1200,
+        easing: Easing.linear,
+        toValue: 1,
+        useNativeDriver: true,
+      })
+    );
+
+    animation.start();
+    return () => animation.stop();
+  }, [spin]);
+
+  const spinStyle = {
+    transform: [
+      {
+        rotate: spin.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['0deg', '360deg'],
+        }),
+      },
+    ],
+  };
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <FlowHeader title="Extracting Text" subtitle="Review scanned content" onBack={onBack} />
@@ -37,11 +72,11 @@ export default function ExtractionScreen({
         contentContainerStyle={styles.extractionContent}
         showsVerticalScrollIndicator={false}>
         <View style={styles.scanHero}>
-          <View style={styles.scanRing}>
+          <Animated.View style={[styles.scanRing, spinStyle]}>
             <View style={styles.scanIcon}>
               <FileCheck2 size={31} color="#ffffff" />
             </View>
-          </View>
+          </Animated.View>
           <Text style={styles.scanTitle}>Extracting text...</Text>
           <Text style={styles.scanCopy}>
             TalinoQ is reading saved materials and preparing the real source text for AI.

@@ -109,7 +109,19 @@ function readNullableString(value: unknown) {
 }
 
 function readNumber(value: unknown, fallback = 0) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return fallback;
 }
 
 function readTimestamp(value: unknown) {
@@ -126,13 +138,21 @@ function readTimestamp(value: unknown) {
 
 function mapChat(snapshot: QueryDocumentSnapshot<DocumentData>): AiChatRecord {
   const data = snapshot.data();
+  const messageCount = readNumber(
+    data.messageCount ??
+      data.messagesCount ??
+      data.message_count ??
+      data.messages_count ??
+      data.totalMessages ??
+      data.totalMessageCount
+  );
 
   return {
     id: snapshot.id,
     userId: readString(data.userId),
     title: readString(data.title, 'Untitled Chat'),
     latestMessage: readString(data.latestMessage),
-    messageCount: readNumber(data.messageCount),
+    messageCount,
     mode:
       data.mode === 'creating_reviewer' || data.mode === 'saving_material'
         ? data.mode
@@ -224,6 +244,81 @@ function titleFromMessage(message: string) {
   return title;
 }
 
+function normalizeTitle(title: string) {
+  return title.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+async function resolveUniqueChatTitle(
+  userId: string,
+  desiredTitle: string,
+  excludeChatId?: string
+) {
+  const baseTitle = desiredTitle.trim() || 'Untitled Chat';
+  const snapshot = await getDocs(aiChatsCollection(userId));
+  const existing = new Set(
+    snapshot.docs
+      .filter((docSnapshot) => docSnapshot.id !== excludeChatId)
+      .map((docSnapshot) => normalizeTitle(readString(docSnapshot.data().title, 'Untitled Chat')))
+  );
+
+  if (!existing.has(normalizeTitle(baseTitle))) {
+    return baseTitle;
+  }
+
+  let index = 1;
+
+  while (true) {
+    const candidate = `${baseTitle} ${index}`;
+
+    if (!existing.has(normalizeTitle(candidate))) {
+      return candidate;
+    }
+
+    index += 1;
+  }
+}
+
+const messageCountBackfillInFlight = new Set<string>();
+
+function backfillMessageCount(userId: string, chat: AiChatRecord) {
+  if (chat.messageCount > 0) {
+    return;
+  }
+
+  if (!chat.latestMessage.trim()) {
+    return;
+  }
+
+  if (messageCountBackfillInFlight.has(chat.id)) {
+    return;
+  }
+
+  messageCountBackfillInFlight.add(chat.id);
+
+  void (async () => {
+    try {
+      const messagesSnapshot = await getDocs(
+        query(aiMessagesCollection(userId, chat.id), orderBy('createdAt', 'asc'), limit(500))
+      );
+      const actualCount = messagesSnapshot.size;
+
+      if (actualCount > 0) {
+        await setDoc(
+          doc(aiChatsCollection(userId), chat.id),
+          {
+            messageCount: actualCount,
+          },
+          { merge: true }
+        );
+      }
+    } catch {
+      // best-effort repair for legacy docs; keep UI responsive even if this fails
+    } finally {
+      messageCountBackfillInFlight.delete(chat.id);
+    }
+  })();
+}
+
 function attachmentFromMaterial(material?: MaterialPreview | null): AiChatAttachment[] | undefined {
   if (!material) {
     return undefined;
@@ -256,7 +351,11 @@ export function subscribeToAiChats(
 
   return onSnapshot(
     query(aiChatsCollection(userId), orderBy('updatedAt', 'desc'), limit(30)),
-    (snapshot) => onChats(snapshot.docs.map(mapChat)),
+    (snapshot) => {
+      const chats = snapshot.docs.map(mapChat);
+      onChats(chats);
+      chats.forEach((chat) => backfillMessageCount(userId, chat));
+    },
     (error) => onError?.(error.message || 'Unable to load AI chat history.')
   );
 }
@@ -302,11 +401,17 @@ export async function saveAiChatMessage(input: SaveAiChatMessageInput) {
 
   batch.set(messageRef, messagePayload);
 
+  const initialTitle = isFirstMessage
+    ? input.role === 'user'
+      ? await resolveUniqueChatTitle(userId, titleFromMessage(content))
+      : await resolveUniqueChatTitle(userId, 'New Chat')
+    : undefined;
+
   const chatPayload = sanitizeForFirestore({
     ...(isFirstMessage
       ? {
           userId,
-          title: input.role === 'user' ? titleFromMessage(content) : 'New Chat',
+          title: initialTitle,
           linkedReviewerId: null,
           createdAt: serverTimestamp(),
         }
@@ -364,9 +469,10 @@ export async function deleteAiChat(chatId: string) {
 
 export async function createEmptyAiChat() {
   const userId = getAiChatUserId();
+  const uniqueTitle = await resolveUniqueChatTitle(userId, 'New Chat');
   const chatRef = await addDoc(aiChatsCollection(userId), {
     userId,
-    title: 'New Chat',
+    title: uniqueTitle,
     latestMessage: '',
     messageCount: 0,
     mode: 'normal_chat',
@@ -382,10 +488,64 @@ export async function createEmptyAiChat() {
 
 export async function renameAiChat(chatId: string, title: string) {
   const userId = getAiChatUserId();
+  const nextTitle = title.trim() || 'Untitled Chat';
+  const snapshot = await getDocs(aiChatsCollection(userId));
+  const hasDuplicate = snapshot.docs.some((docSnapshot) => {
+    if (docSnapshot.id === chatId) {
+      return false;
+    }
+
+    return (
+      normalizeTitle(readString(docSnapshot.data().title, 'Untitled Chat')) ===
+      normalizeTitle(nextTitle)
+    );
+  });
+
+  if (hasDuplicate) {
+    throw new Error('A chat with this title already exists. Please choose a different name.');
+  }
+
   await setDoc(
     doc(aiChatsCollection(userId), chatId),
     {
-      title: title.trim() || 'Untitled Chat',
+      title: nextTitle,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function updateAiChatMessageContent(
+  chatId: string,
+  messageId: string,
+  content: string,
+  type?: AiChatMessageType
+) {
+  const userId = getAiChatUserId();
+  const trimmedContent = content.trim();
+
+  if (!trimmedContent) {
+    throw new Error('Chat messages cannot be empty.');
+  }
+
+  await setDoc(
+    doc(aiMessagesCollection(userId, chatId), messageId),
+    {
+      content: trimmedContent,
+      ...(type ? { type } : {}),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+export async function updateAiChatLatestMessage(chatId: string, latestMessage: string) {
+  const userId = getAiChatUserId();
+
+  await setDoc(
+    doc(aiChatsCollection(userId), chatId),
+    {
+      latestMessage: latestMessage.trim().slice(0, 180),
       updatedAt: serverTimestamp(),
     },
     { merge: true }

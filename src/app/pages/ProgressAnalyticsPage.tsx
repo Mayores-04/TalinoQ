@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Calculator, Lightbulb, Rocket, Sigma } from 'lucide-react-native';
+import { AppScreen } from '@/components/layout/AppScreen';
 import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
-import { subscribeToReviewers } from '@/lib/reviewers';
+import { getCachedReviewers, subscribeToReviewers } from '@/lib/reviewers';
 import {
   buildCalculatedStudyContext,
   buildStudyAnalytics,
@@ -29,14 +28,16 @@ export function ProgressAnalyticsPage({
   onOpenCreate: _onOpenCreate,
   onOpenAIChat: _onOpenAIChat,
 }: ProgressAnalyticsPageProps) {
-  const initialLoading = useSkeletonLoading();
   const { refreshing, refresh } = usePullToRefresh();
-  const [analytics, setAnalytics] = useState<StudyAnalytics>(() => buildStudyAnalytics([]));
-  const [calculatedContext, setCalculatedContext] = useState<CalculatedStudyContext>(() =>
-    buildCalculatedStudyContext([])
+  const cachedReviewers = getCachedReviewers();
+  const [analytics, setAnalytics] = useState<StudyAnalytics>(() =>
+    buildStudyAnalytics(cachedReviewers ?? [])
   );
-  const [databaseLoading, setDatabaseLoading] = useState(true);
-  const isLoading = initialLoading || refreshing || databaseLoading;
+  const [calculatedContext, setCalculatedContext] = useState<CalculatedStudyContext>(() =>
+    buildCalculatedStudyContext(cachedReviewers ?? [])
+  );
+  const [databaseLoading, setDatabaseLoading] = useState(!cachedReviewers);
+  const isLoading = databaseLoading;
 
   useEffect(() => {
     return subscribeToReviewers(
@@ -56,18 +57,18 @@ export function ProgressAnalyticsPage({
   }, []);
 
   return (
-    <SafeAreaView edges={[]} style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
+    <AppScreen
+      scroll
+      scrollProps={{
+        refreshControl: (
           <RefreshControl
             refreshing={refreshing}
             onRefresh={refresh}
             tintColor="#020a68"
             colors={['#020a68']}
           />
-        }
-        showsVerticalScrollIndicator={false}>
+        ),
+      }}>
         {isLoading ? (
           <ProgressAnalyticsSkeleton />
         ) : (
@@ -115,7 +116,10 @@ export function ProgressAnalyticsPage({
                     : 'Create reviewers first and TalinoQ will calculate weak areas before asking AI to help.'}
               </Text>
               <View style={styles.logicMetrics}>
-                <LogicMetric label="Completion" value={`${calculatedContext.reviewerCompletion}%`} />
+                <LogicMetric
+                  label="Completion"
+                  value={`${calculatedContext.reviewerCompletion}%`}
+                />
                 <LogicMetric label="Focus Areas" value={`${calculatedContext.focusAreas.length}`} />
                 <LogicMetric label="AI Level" value={calculatedContext.recommendedDifficulty} />
               </View>
@@ -202,8 +206,7 @@ export function ProgressAnalyticsPage({
             </View>
           </>
         )}
-      </ScrollView>
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
@@ -346,15 +349,6 @@ function getHeatColor(value: number) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: '#eef7fc',
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 24,
-    paddingHorizontal: 18,
-    paddingTop: 6,
-  },
   readinessCard: {
     backgroundColor: '#ffffff',
     borderRadius: 10,

@@ -43,6 +43,8 @@ export type CreateLibraryInput = {
 };
 
 const libraryColors: LibraryColor[] = ['#004f4c', '#007a80', '#020a68', '#7c3aed', '#ee845e'];
+let cachedLibrariesUserId: string | null = null;
+let cachedLibraries: LibraryRecord[] | null = null;
 
 function librariesCollection(userId: string) {
   if (!firebaseDb) {
@@ -165,20 +167,40 @@ export function subscribeToLibraries(
     return () => {};
   }
 
+  if (cachedLibrariesUserId === userId && cachedLibraries) {
+    onLibraries(cachedLibraries);
+  }
+
   return onSnapshot(
     librariesCollection(userId),
     (snapshot) => {
-      onLibraries(sortLibraries(snapshot.docs.map(mapLibraryDocument)));
+      const libraries = sortLibraries(snapshot.docs.map(mapLibraryDocument));
+      cachedLibrariesUserId = userId;
+      cachedLibraries = libraries;
+      onLibraries(libraries);
     },
     (error) => onError?.(error.message || 'Unable to load libraries.')
   );
+}
+
+export function getCachedLibraries() {
+  const userId = firebaseAuth?.currentUser?.uid;
+
+  if (!userId || cachedLibrariesUserId !== userId) {
+    return null;
+  }
+
+  return cachedLibraries;
 }
 
 export async function fetchLibraries() {
   const userId = getLibraryUserId();
   const snapshot = await getDocs(librariesCollection(userId));
 
-  return sortLibraries(snapshot.docs.map(mapLibraryDocument));
+  const libraries = sortLibraries(snapshot.docs.map(mapLibraryDocument));
+  cachedLibrariesUserId = userId;
+  cachedLibraries = libraries;
+  return libraries;
 }
 
 export async function createLibrary(input: CreateLibraryInput) {

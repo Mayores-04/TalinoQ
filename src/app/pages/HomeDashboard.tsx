@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AlertTriangle, BarChart3, BookOpen, Layers3, Sparkles, Target } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppScreen } from '@/components/layout/AppScreen';
 import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
-import { subscribeToReviewers, type ReviewerRecord } from '@/lib/reviewers';
+import { getCachedReviewers, subscribeToReviewers, type ReviewerRecord } from '@/lib/reviewers';
 import { buildStudyAnalytics, type StudyAnalytics } from '@/lib/studyAnalytics';
 
 type HomeDashboardProps = {
@@ -25,12 +24,16 @@ export function HomeDashboard({
   onOpenAIChat,
   onOpenWeakTopics,
 }: HomeDashboardProps) {
-  const initialLoading = useSkeletonLoading();
   const { refreshing, refresh } = usePullToRefresh();
-  const [recentReviewers, setRecentReviewers] = useState<ReviewerRecord[]>([]);
-  const [analytics, setAnalytics] = useState<StudyAnalytics>(() => buildStudyAnalytics([]));
-  const [reviewersLoading, setReviewersLoading] = useState(true);
-  const isLoading = initialLoading || refreshing || reviewersLoading;
+  const cachedReviewers = getCachedReviewers();
+  const [recentReviewers, setRecentReviewers] = useState<ReviewerRecord[]>(
+    () => cachedReviewers?.slice(0, 2) ?? []
+  );
+  const [analytics, setAnalytics] = useState<StudyAnalytics>(() =>
+    buildStudyAnalytics(cachedReviewers ?? [])
+  );
+  const [reviewersLoading, setReviewersLoading] = useState(!cachedReviewers);
+  const isLoading = reviewersLoading;
 
   useEffect(() => {
     return subscribeToReviewers(
@@ -48,18 +51,19 @@ export function HomeDashboard({
   }, []);
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
+    <AppScreen
+      edges={['bottom']}
+      scroll
+      scrollProps={{
+        refreshControl: (
           <RefreshControl
             refreshing={refreshing}
             onRefresh={refresh}
             tintColor="#064e4a"
             colors={['#064e4a']}
           />
-        }
-        showsVerticalScrollIndicator={false}>
+        ),
+      }}>
         {isLoading ? <HomeDashboardSkeleton /> : null}
 
         {!isLoading ? (
@@ -224,8 +228,7 @@ export function HomeDashboard({
             </View>
           </>
         ) : null}
-      </ScrollView>
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
@@ -366,17 +369,8 @@ function WeakTopicRow({
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    paddingTop: 2,
-  },
   header: {
-    paddingTop: 4,
+    paddingTop: 0,
   },
   title: {
     color: '#111827',

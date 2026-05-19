@@ -40,6 +40,8 @@ export type MaterialPreview = {
   previewUri?: string;
   remoteUrl?: string;
   url?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 function toStatus(value: unknown): MaterialStatus {
@@ -66,6 +68,18 @@ function readNullableString(value: unknown) {
 
 function readNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readTimestamp(value: unknown) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value && typeof value === 'object' && 'toDate' in value) {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+
+  return undefined;
 }
 
 function toSourceType(value: unknown, mimeType?: string, fileName?: string): MaterialSourceType {
@@ -142,6 +156,8 @@ function mapMaterialPreview(id: string, data: Record<string, unknown>): Material
       undefined,
     remoteUrl: readString(data.remoteUrl) || undefined,
     url: readString(data.url) || undefined,
+    createdAt: readTimestamp(data.createdAt),
+    updatedAt: readTimestamp(data.updatedAt),
   };
 }
 
@@ -162,6 +178,57 @@ function explainFirebaseWriteError(error: unknown) {
 }
 
 export function subscribeToLearningMaterials(
+  libraryIdOrCallback: string | null | undefined | ((materials: MaterialPreview[]) => void),
+  maybeOnMaterials?: (materials: MaterialPreview[]) => void,
+  maybeOnError?: () => void
+) {
+  const libraryId = typeof libraryIdOrCallback === 'function' ? undefined : libraryIdOrCallback;
+  const onMaterials =
+    typeof libraryIdOrCallback === 'function' ? libraryIdOrCallback : maybeOnMaterials;
+  const onError =
+    typeof libraryIdOrCallback === 'function'
+      ? (maybeOnMaterials as (() => void) | undefined)
+      : maybeOnError;
+
+  if (!onMaterials) {
+    return () => {};
+  }
+
+  const userId = firebaseAuth?.currentUser?.uid;
+
+  if (!firebaseDb || !userId) {
+    onMaterials([]);
+    return () => {};
+  }
+
+  const constraints =
+    libraryId === undefined
+      ? [orderBy('createdAt', 'desc')]
+      : [where('libraryId', '==', libraryId)];
+  const materialsQuery = query(
+    collection(firebaseDb, 'users', userId, 'learningMaterials'),
+    ...constraints
+  );
+
+  return onSnapshot(
+    materialsQuery,
+    (snapshot) => {
+      onMaterials(
+        snapshot.docs.map((documentSnapshot) =>
+          mapMaterialPreview(
+            documentSnapshot.id,
+            documentSnapshot.data() as Record<string, unknown>
+          )
+        )
+      );
+    },
+    () => {
+      onError?.();
+    }
+  );
+}
+
+export function subscribeToAllLearningMaterials(
   onMaterials: (materials: MaterialPreview[]) => void,
   onError?: () => void
 ) {

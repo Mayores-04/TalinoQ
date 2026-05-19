@@ -1,17 +1,23 @@
 import { StyleSheet } from 'react-native';
+import {
+  APP_FLOW_BOTTOM_PADDING,
+  APP_PAGE_BACKGROUND,
+  APP_PAGE_HORIZONTAL_PADDING,
+  APP_SURFACE,
+} from '@/styles/appTheme';
 
 export const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: APP_PAGE_BACKGROUND,
     flex: 1,
   },
   flowHeader: {
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: APP_PAGE_BACKGROUND,
     borderBottomColor: '#e2e8f0',
     borderBottomWidth: 1,
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     paddingVertical: 12,
     gap: 12,
   },
@@ -50,7 +56,11 @@ export const styles = StyleSheet.create({
   segmentText: { color: '#475569', fontSize: 11, fontWeight: '800' },
   segmentTextActive: { color: '#ffffff' },
 
-  setupContent: { padding: 18, paddingBottom: 28 },
+  setupContent: {
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_FLOW_BOTTOM_PADDING,
+  },
   setupTitle: { color: '#172033', fontSize: 17, fontWeight: '800' },
   setupCopy: { color: '#475569', fontSize: 12, lineHeight: 17, marginTop: 6 },
 
@@ -59,7 +69,7 @@ export const styles = StyleSheet.create({
 
   fieldLabel: { color: '#172033', fontSize: 11, fontWeight: '800', marginBottom: 7, marginTop: 14 },
   input: {
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_SURFACE,
     borderColor: '#cbd5e1',
     borderRadius: 6,
     borderWidth: 1,
@@ -71,7 +81,7 @@ export const styles = StyleSheet.create({
 
   searchField: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_SURFACE,
     borderColor: '#cbd5e1',
     borderRadius: 6,
     borderWidth: 1,
@@ -114,7 +124,7 @@ export const styles = StyleSheet.create({
 
   categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_SURFACE,
     borderColor: '#cbd5e1',
     borderRadius: 6,
     borderWidth: 1,
@@ -136,7 +146,7 @@ export const styles = StyleSheet.create({
   },
   configRow: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_SURFACE,
     borderBottomColor: '#e2e8f0',
     borderBottomWidth: 1,
     flexDirection: 'row',
@@ -391,11 +401,17 @@ export const styles = StyleSheet.create({
   materialsPreviewStatusTextFailed: { color: '#b91c1c' },
 
   // Extraction screen small bits
-  extractionContent: { padding: 18, paddingBottom: 28 },
+  extractionContent: {
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_FLOW_BOTTOM_PADDING,
+  },
   scanHero: { alignItems: 'center', paddingTop: 20 },
   scanRing: {
     alignItems: 'center',
     borderColor: '#b8f3d3',
+    borderLeftColor: '#27c8df',
+    borderTopColor: '#004f4c',
     borderRadius: 999,
     borderWidth: 4,
     height: 104,

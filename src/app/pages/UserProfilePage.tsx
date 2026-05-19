@@ -31,9 +31,14 @@ import {
 } from 'lucide-react-native';
 
 import { markUserProfileSynced, updateUserProfileDetails, type UserProfile } from '@/lib/firebase';
-import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
+import {
+  APP_PAGE_BACKGROUND,
+  APP_PAGE_BOTTOM_NAV_PADDING,
+  APP_PAGE_HORIZONTAL_PADDING,
+  APP_PAGE_TOP_PADDING,
+  APP_SURFACE,
+} from '@/styles/appTheme';
 
 type UserProfilePageProps = {
   currentUser: User | null;
@@ -76,7 +81,6 @@ export function UserProfilePage({
   const [cloudSync, setCloudSync] = useState(true);
   const [privateProfile, setPrivateProfile] = useState(true);
   const [analyticsSharing, setAnalyticsSharing] = useState(false);
-  const initialLoading = useSkeletonLoading();
 
   const initials = profile.displayName
     .split(/\s+/)
@@ -138,7 +142,6 @@ export function UserProfilePage({
   };
   const runManualSync = () => syncProfile(true);
   const { refreshing, refresh } = usePullToRefresh({ onRefresh: () => syncProfile(false) });
-  const isLoading = initialLoading || refreshing;
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -175,129 +178,121 @@ export function UserProfilePage({
           />
         }
         showsVerticalScrollIndicator={false}>
-        {isLoading ? (
-          <UserProfileSkeleton />
-        ) : (
-          <>
-            <View style={styles.identityBlock}>
-              <View style={styles.avatarWrap}>
-                {profile.photoURL ? (
-                  <Image
-                    source={{ uri: profile.photoURL }}
-                    resizeMode="cover"
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarFallback}>
-                    <Text style={styles.avatarInitials}>{initials || 'TQ'}</Text>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => openPanel('edit')}
-                  style={styles.editBadge}>
-                  <Edit3 size={13} color="#ffffff" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.name}>{profile.displayName}</Text>
-              <Text style={styles.email}>{profile.email}</Text>
-
-              <View style={styles.pillsRow}>
-                <View style={styles.planPill}>
-                  <Text style={styles.planPillText}>{profile.plan}</Text>
+        <>
+          <View style={styles.identityBlock}>
+            <View style={styles.avatarWrap}>
+              {profile.photoURL ? (
+                <Image source={{ uri: profile.photoURL }} resizeMode="cover" style={styles.avatar} />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarInitials}>{initials || 'TQ'}</Text>
                 </View>
-                <View style={styles.trackPill}>
-                  <Text style={styles.trackPillText}>{profile.track}</Text>
-                </View>
-              </View>
-            </View>
+              )}
 
-            <View style={styles.standingCard}>
-              <View style={styles.standingTop}>
-                <View>
-                  <Text style={styles.cardEyebrow}>CURRENT STANDING</Text>
-                  <Text style={styles.levelTitle}>{profile.levelTitle}</Text>
-                </View>
-                <View style={styles.medalBox}>
-                  <Medal size={20} color="#1e1b7a" />
-                </View>
-              </View>
-
-              <View style={styles.xpRow}>
-                <Text style={styles.xpLabel}>XP Progress</Text>
-                <Text style={styles.xpValue}>
-                  {profile.xp.toLocaleString()} / {profile.xpGoal.toLocaleString()}
-                </Text>
-              </View>
-
-              <View style={styles.xpTrack}>
-                <View style={[styles.xpFill, { width: xpPercentage }]} />
-              </View>
-            </View>
-
-            <LinearGradient
-              colors={['#11979e', '#4ad4e2']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.streakCard}>
-              <View>
-                <Flame size={24} color="#ffffff" fill="#ffffff" />
-                <Text style={styles.streakNumber}>{profile.studyStreak}</Text>
-                <Text style={styles.streakText}>DAY STUDY STREAK</Text>
-              </View>
-
-              <View style={styles.rankBadge}>
-                <Text style={styles.rankText}>{profile.rankLabel}</Text>
-              </View>
-            </LinearGradient>
-
-            <View style={styles.accountCard}>
-              <Text style={styles.sectionLabel}>ACCOUNT SETTINGS</Text>
-              <ProfileActionRow
-                icon={<UserRound size={17} color="#1e1b7a" />}
-                title="Edit Profile"
+              <TouchableOpacity
+                activeOpacity={0.8}
                 onPress={() => openPanel('edit')}
-              />
-              <ProfileActionRow
-                icon={<RefreshCw size={17} color="#1e1b7a" />}
-                title="Sync Settings"
-                onPress={() => openPanel('sync')}
-              />
-              <ProfileActionRow
-                icon={<Lock size={17} color="#1e1b7a" />}
-                title="Privacy Settings"
-                onPress={() => openPanel('privacy')}
-              />
-              <ProfileActionRow
-                icon={<Database size={17} color="#1e1b7a" />}
-                title="Data Management"
-                onPress={() => openPanel('data')}
-              />
-              <ProfileActionRow
-                danger
-                icon={<LogOut size={17} color="#ef4444" />}
-                title="Logout"
-                onPress={onSignOut}
-              />
+                style={styles.editBadge}>
+                <Edit3 size={13} color="#ffffff" />
+              </TouchableOpacity>
             </View>
 
-            <LinearGradient
-              colors={['#172554', '#1e1b7a']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.upgradeCard}>
-              <Text style={styles.upgradeTitle}>Upgrade Your Learning</Text>
-              <Text style={styles.upgradeCopy}>
-                Unlock advanced AI analysis and unlimited offline storage.
+            <Text style={styles.name}>{profile.displayName}</Text>
+            <Text style={styles.email}>{profile.email}</Text>
+
+            <View style={styles.pillsRow}>
+              <View style={styles.planPill}>
+                <Text style={styles.planPillText}>{profile.plan}</Text>
+              </View>
+              <View style={styles.trackPill}>
+                <Text style={styles.trackPillText}>{profile.track}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.standingCard}>
+            <View style={styles.standingTop}>
+              <View>
+                <Text style={styles.cardEyebrow}>CURRENT STANDING</Text>
+                <Text style={styles.levelTitle}>{profile.levelTitle}</Text>
+              </View>
+              <View style={styles.medalBox}>
+                <Medal size={20} color="#1e1b7a" />
+              </View>
+            </View>
+
+            <View style={styles.xpRow}>
+              <Text style={styles.xpLabel}>XP Progress</Text>
+              <Text style={styles.xpValue}>
+                {profile.xp.toLocaleString()} / {profile.xpGoal.toLocaleString()}
               </Text>
-              <TouchableOpacity activeOpacity={0.84} style={styles.upgradeButton}>
-                <Text style={styles.upgradeButtonText}>Explore Features</Text>
-              </TouchableOpacity>
-            </LinearGradient>
-          </>
-        )}
+            </View>
+
+            <View style={styles.xpTrack}>
+              <View style={[styles.xpFill, { width: xpPercentage }]} />
+            </View>
+          </View>
+
+          <LinearGradient
+            colors={['#11979e', '#4ad4e2']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.streakCard}>
+            <View>
+              <Flame size={24} color="#ffffff" fill="#ffffff" />
+              <Text style={styles.streakNumber}>{profile.studyStreak}</Text>
+              <Text style={styles.streakText}>DAY STUDY STREAK</Text>
+            </View>
+
+            <View style={styles.rankBadge}>
+              <Text style={styles.rankText}>{profile.rankLabel}</Text>
+            </View>
+          </LinearGradient>
+
+          <View style={styles.accountCard}>
+            <Text style={styles.sectionLabel}>ACCOUNT SETTINGS</Text>
+            <ProfileActionRow
+              icon={<UserRound size={17} color="#1e1b7a" />}
+              title="Edit Profile"
+              onPress={() => openPanel('edit')}
+            />
+            <ProfileActionRow
+              icon={<RefreshCw size={17} color="#1e1b7a" />}
+              title="Sync Settings"
+              onPress={() => openPanel('sync')}
+            />
+            <ProfileActionRow
+              icon={<Lock size={17} color="#1e1b7a" />}
+              title="Privacy Settings"
+              onPress={() => openPanel('privacy')}
+            />
+            <ProfileActionRow
+              icon={<Database size={17} color="#1e1b7a" />}
+              title="Data Management"
+              onPress={() => openPanel('data')}
+            />
+            <ProfileActionRow
+              danger
+              icon={<LogOut size={17} color="#ef4444" />}
+              title="Logout"
+              onPress={onSignOut}
+            />
+          </View>
+
+          <LinearGradient
+            colors={['#172554', '#1e1b7a']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.upgradeCard}>
+            <Text style={styles.upgradeTitle}>Upgrade Your Learning</Text>
+            <Text style={styles.upgradeCopy}>
+              Unlock advanced AI analysis and unlimited offline storage.
+            </Text>
+            <TouchableOpacity activeOpacity={0.84} style={styles.upgradeButton}>
+              <Text style={styles.upgradeButtonText}>Explore Features</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+        </>
       </ScrollView>
 
       <Modal visible={panelMode !== null} transparent animationType="fade">
@@ -377,38 +372,6 @@ export function UserProfilePage({
         </View>
       </Modal>
     </SafeAreaView>
-  );
-}
-
-function UserProfileSkeleton() {
-  return (
-    <View>
-      <View style={styles.identityBlock}>
-        <LoadingSkeleton height={94} width={94} radius={999} />
-        <LoadingSkeleton height={29} width="58%" radius={10} style={styles.skeletonNameGap} />
-        <LoadingSkeleton height={15} width="72%" radius={7} style={styles.skeletonEmailGap} />
-        <View style={styles.pillsRow}>
-          <LoadingSkeleton height={28} width={92} radius={999} />
-          <LoadingSkeleton height={28} width={132} radius={999} />
-        </View>
-      </View>
-
-      <View style={styles.standingCard}>
-        <View style={styles.standingTop}>
-          <View>
-            <LoadingSkeleton height={12} width={126} radius={6} />
-            <LoadingSkeleton height={22} width={166} radius={8} style={styles.skeletonEmailGap} />
-          </View>
-          <LoadingSkeleton height={45} width={45} radius={6} />
-        </View>
-        <LoadingSkeleton height={12} radius={6} style={styles.skeletonWideGap} />
-        <LoadingSkeleton height={8} radius={999} style={styles.skeletonEmailGap} />
-      </View>
-
-      <LoadingSkeleton height={118} radius={10} style={styles.skeletonSectionGap} />
-      <LoadingSkeleton height={292} radius={10} style={styles.skeletonSectionGap} />
-      <LoadingSkeleton height={140} radius={10} style={styles.skeletonSectionGap} />
-    </View>
   );
 }
 
@@ -497,17 +460,17 @@ function getPanelTitle(mode: PanelMode) {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#eef6fb',
+    backgroundColor: APP_PAGE_BACKGROUND,
     flex: 1,
   },
   header: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_SURFACE,
     borderBottomColor: '#dbe4ee',
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     paddingVertical: 12,
   },
   headerButton: {
@@ -522,8 +485,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   scrollContent: {
-    padding: 18,
-    paddingBottom: 120,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingBottom: APP_PAGE_BOTTOM_NAV_PADDING,
+    paddingTop: APP_PAGE_TOP_PADDING,
   },
   identityBlock: {
     alignItems: 'center',

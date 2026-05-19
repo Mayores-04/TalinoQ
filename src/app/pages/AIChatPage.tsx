@@ -1,28 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  ArrowLeft,
-  BookOpenCheck,
-  History,
-  Layers3,
-  Paperclip,
-  Plus,
-  Send,
-  X,
-} from 'lucide-react-native';
 import {
   createEmptyAiChat,
   deleteAiChat,
@@ -30,6 +9,8 @@ import {
   renameAiChat,
   saveAiChatMessage,
   subscribeToAiChats,
+  updateAiChatLatestMessage,
+  updateAiChatMessageContent,
   updateAiChatLinks,
   type AiChatRecord,
   type AiChatMessageType,
@@ -56,14 +37,12 @@ import {
   formatCalculatedStudyContextForAi,
   shouldAttachStudyContextToAi,
 } from '@/lib/studyAnalytics';
-import { AttachmentPreview } from '@/components/aiChatComponents/AttachmentPreview';
 import { ChatHistoryModal } from '@/components/aiChatComponents/ChatHistoryModal';
-import { EmptyState } from '@/components/aiChatComponents/EmptyState';
-import { MentorMessage } from '@/components/aiChatComponents/MentorMessage';
-import { PromptChips } from '@/components/aiChatComponents/PromptChips';
-import { TypingIndicator } from '@/components/aiChatComponents/TypingIndicator';
-import { UserMessage } from '@/components/aiChatComponents/UserMessage';
-import { emptyDraft, materialActionSuggestions, promptSuggestions } from './aiChat/constants';
+import { AIChatComposer } from '../../components/aiChatComponents/AIChatComposer';
+import { AIChatFlowBar } from '../../components/aiChatComponents/AIChatFlowBar';
+import { AIChatHeader } from '../../components/aiChatComponents/AIChatHeader';
+import { AIChatMessages } from '../../components/aiChatComponents/AIChatMessages';
+import { emptyDraft, materialActionSuggestions } from './aiChat/constants';
 import {
   buildConfirmationMessage,
   buildLibraryQuestion,
@@ -108,7 +87,6 @@ export function AIChatPage({
   onOpenProgress: _onOpenProgress,
 }: AIChatPageProps) {
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView | null>(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -130,6 +108,7 @@ export function AIChatPage({
   const [draftChatStarted, setDraftChatStarted] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 
   const trimmedMessage = message.trim();
   const canSend =
@@ -316,11 +295,14 @@ export function AIChatPage({
         type,
       });
 
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === chatMessage.id ? { ...item, id: saved.messageId } : item
+        )
+      );
+
       if (!currentChatId) {
         setCurrentChatId(saved.chatId);
-        if (chatMessage.role === 'user') {
-          setCurrentChatTitle(buildLocalChatTitle(chatMessage.content));
-        }
       }
 
       setDraftChatStarted(false);
@@ -328,6 +310,116 @@ export function AIChatPage({
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save chat message.');
       return targetChatId;
+    }
+  }
+
+  async function handleEditUserMessage(messageId: string, nextContent: string) {
+    if (!currentChatId || isSending) {
+      return;
+    }
+
+    const editedContent = nextContent.trim();
+
+    if (!editedContent) {
+      return;
+    }
+
+    const userIndex = messages.findIndex((item) => item.id === messageId && item.role === 'user');
+
+    if (userIndex === -1) {
+      return;
+    }
+
+    const userMessage = messages[userIndex];
+
+    if (userMessage.id.startsWith('user-')) {
+      setErrorMessage('Please wait a moment for this message to finish saving before editing.');
+      return;
+    }
+
+    if (userMessage.attachment) {
+      setErrorMessage('Messages with file attachments cannot be edited.');
+      return;
+    }
+
+    const assistantIndex = messages.findIndex(
+      (item, index) => index > userIndex && item.role === 'assistant'
+    );
+    const previousMessages = messages.slice(0, userIndex);
+    const aiUserPrompt = buildCalculationFirstMentorPrompt(editedContent);
+
+    setEditingMessageId(messageId);
+    setIsSending(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await askTalinoqMentor([
+        ...previousMessages.map(({ role, content }) => ({ role, content })),
+        { role: 'user', content: aiUserPrompt },
+      ]);
+
+      let replacedAssistantId: string | null = null;
+
+      if (assistantIndex !== -1) {
+        replacedAssistantId = messages[assistantIndex].id;
+      }
+
+      setMessages((current) => {
+        const next = [...current];
+        const localUserIndex = next.findIndex(
+          (item) => item.id === messageId && item.role === 'user'
+        );
+
+        if (localUserIndex === -1) {
+          return current;
+        }
+
+        next[localUserIndex] = {
+          ...next[localUserIndex],
+          content: editedContent,
+        };
+
+        const localAssistantIndex = next.findIndex(
+          (item, index) => index > localUserIndex && item.role === 'assistant'
+        );
+
+        if (localAssistantIndex !== -1) {
+          next[localAssistantIndex] = {
+            ...next[localAssistantIndex],
+            content: response.message,
+          };
+        }
+
+        return next;
+      });
+
+      await updateAiChatMessageContent(currentChatId, messageId, editedContent, 'text');
+
+      if (replacedAssistantId && !replacedAssistantId.startsWith('assistant-')) {
+        await updateAiChatMessageContent(
+          currentChatId,
+          replacedAssistantId,
+          response.message,
+          'text'
+        );
+      } else {
+        await pushAssistant(response.message, undefined, 'text', currentChatId);
+      }
+
+      setCurrentChatTitle((currentTitle) =>
+        currentTitle === 'New Chat' ? buildLocalChatTitle(editedContent) : currentTitle
+      );
+
+      const shouldRefreshLatest = assistantIndex === messages.length - 1;
+
+      if (shouldRefreshLatest) {
+        await updateAiChatLatestMessage(currentChatId, response.message);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to edit this message.');
+    } finally {
+      setIsSending(false);
+      setEditingMessageId(null);
     }
   }
 
@@ -770,10 +862,9 @@ export function AIChatPage({
           ? await extractPdfTextFromRemote(savedMaterial.remoteUrl)
           : null;
       const extractedText = remoteExtraction?.text || extraction.extractedText;
-      const extractionMessage =
-        remoteExtraction?.text
-          ? 'I extracted readable text from this PDF.'
-          : remoteExtraction?.warning || extraction.extractionMessage;
+      const extractionMessage = remoteExtraction?.text
+        ? 'I extracted readable text from this PDF.'
+        : remoteExtraction?.warning || extraction.extractionMessage;
 
       if (remoteExtraction) {
         await updateLearningMaterial(savedMaterial.id, {
@@ -1024,201 +1115,51 @@ export function AIChatPage({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
         style={styles.keyboardArea}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            activeOpacity={0.76}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            onPress={onBack}
-            style={styles.headerButton}>
-            <ArrowLeft size={22} color="#004f4c" />
-          </TouchableOpacity>
+        <AIChatHeader
+          currentChatTitle={currentChatTitle}
+          draftTitle={draftTitle}
+          isEditingTitle={isEditingTitle}
+          isFlowActive={mode === 'creating_reviewer' || mode === 'saving_material'}
+          onBack={onBack}
+          onBeginTitleEdit={beginTitleEdit}
+          onCancelFlow={cancelReviewerFlow}
+          onDraftTitleChange={setDraftTitle}
+          onOpenHistory={() => setHistoryOpen(true)}
+          onSaveTitleEdit={saveTitleEdit}
+          onStartNewChat={startNewChat}
+        />
 
-          <View style={styles.headerIdentity}>
-            <Image
-              source={require('../../../assets/LightModeAppLogo.png')}
-              resizeMode="contain"
-              style={styles.headerAvatar}
-            />
-            <View style={styles.headerCopy}>
-              {isEditingTitle ? (
-                <TextInput
-                  value={draftTitle}
-                  onChangeText={setDraftTitle}
-                  placeholder="Chat title"
-                  placeholderTextColor="#94a3b8"
-                  returnKeyType="done"
-                  onSubmitEditing={saveTitleEdit}
-                  onBlur={saveTitleEdit}
-                  style={styles.headerTitleInput}
-                />
-              ) : (
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Edit chat title"
-                  onPress={beginTitleEdit}>
-                  <Text style={styles.headerTitle} numberOfLines={1}>
-                    {currentChatTitle || 'TalinoQ AI Mentor'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              <View style={styles.statusRow}>
-                <View style={styles.statusDot} />
-                <Text style={styles.headerSubtitle}>Scan. Review. Improve.</Text>
-              </View>
-            </View>
-          </View>
+        {mode === 'creating_reviewer' ? <AIChatFlowBar step={step} /> : null}
 
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              activeOpacity={0.76}
-              accessibilityRole="button"
-              accessibilityLabel="New chat"
-              onPress={startNewChat}
-              style={styles.headerMiniButton}>
-              <Plus size={18} color="#004f4c" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.76}
-              accessibilityRole="button"
-              accessibilityLabel="Chat history"
-              onPress={() => setHistoryOpen(true)}
-              style={styles.headerMiniButton}>
-              <History size={18} color="#004f4c" />
-            </TouchableOpacity>
-          </View>
+        <AIChatMessages
+          editingMessageId={editingMessageId}
+          hasConversation={hasConversation}
+          isSending={isSending}
+          loading={messagesLoading}
+          messages={messages}
+          onEditUserMessage={handleEditUserMessage}
+          onSuggestion={handleSuggestion}
+          paddingBottom={Math.max(180, insets.bottom + 156)}
+        />
 
-          {mode === 'creating_reviewer' || mode === 'saving_material' ? (
-            <TouchableOpacity
-              activeOpacity={0.76}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel active AI flow"
-              onPress={cancelReviewerFlow}
-              style={styles.headerButton}>
-              <X size={20} color="#004f4c" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {mode === 'creating_reviewer' ? (
-          <View style={styles.flowBar}>
-            <View style={styles.flowIcon}>
-              <BookOpenCheck size={15} color="#004f4c" />
-            </View>
-            <View style={styles.flowCopy}>
-              <Text style={styles.flowTitle}>Creating reviewer</Text>
-              <Text style={styles.flowText}>{getStepLabel(step)}</Text>
-            </View>
-          </View>
-        ) : null}
-
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={[
-            styles.chatContent,
-            { paddingBottom: Math.max(180, insets.bottom + 156) },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-          showsVerticalScrollIndicator={false}>
-          {messagesLoading ? (
-            <View style={styles.loadingHistoryCard}>
-              <ActivityIndicator color="#004f4c" />
-              <Text style={styles.loadingHistoryText}>Loading saved chat...</Text>
-            </View>
-          ) : null}
-
-          {!hasConversation ? (
-            <EmptyState onSuggestion={handleSuggestion} prompts={promptSuggestions} />
-          ) : null}
-
-          {messages.map((chatMessage) =>
-            chatMessage.role === 'assistant' ? (
-              <MentorMessage
-                key={chatMessage.id}
-                text={chatMessage.content}
-                time={chatMessage.time}
-                tone={chatMessage.tone}
-              />
-            ) : (
-              <UserMessage
-                key={chatMessage.id}
-                attachment={chatMessage.attachment}
-                text={chatMessage.content}
-                time={chatMessage.time}
-              />
-            )
-          )}
-
-          {isSending ? <TypingIndicator /> : null}
-        </ScrollView>
-
-        <View style={[styles.composerWrap, { paddingBottom: Math.max(12, insets.bottom + 10) }]}>
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-          {hasConversation ? (
-            <PromptChips prompts={activeOptions} onPress={handleStepChip} />
-          ) : null}
-
-          {createdReviewer ? (
-            <TouchableOpacity
-              activeOpacity={0.84}
-              onPress={onOpenReviewers}
-              style={styles.reviewersCta}>
-              <Layers3 size={15} color="#004f4c" />
-              <Text style={styles.reviewersCtaText}>Open Reviewers</Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {activeMaterial ? (
-            <AttachmentPreview material={activeMaterial} onRemove={() => setActiveMaterial(null)} />
-          ) : null}
-
-          <View style={styles.composerRow}>
-            <TouchableOpacity
-              activeOpacity={0.82}
-              accessibilityRole="button"
-              accessibilityLabel="Attach learning material"
-              disabled={isUploadingMaterial || isSending}
-              onPress={pickMaterialFile}
-              style={[
-                styles.attachButton,
-                (isUploadingMaterial || isSending) && styles.attachButtonDisabled,
-              ]}>
-              {isUploadingMaterial ? (
-                <ActivityIndicator color="#004f4c" size="small" />
-              ) : (
-                <Paperclip size={20} color="#004f4c" />
-              )}
-            </TouchableOpacity>
-
-            <TextInput
-              value={message}
-              onChangeText={setMessage}
-              placeholder="Ask TalinoQ AI to explain, quiz, or create a reviewer..."
-              placeholderTextColor="#8da0b3"
-              multiline
-              maxLength={4000}
-              returnKeyType="send"
-              style={styles.composer}
-              textAlignVertical="center"
-            />
-
-            <TouchableOpacity
-              activeOpacity={0.86}
-              accessibilityRole="button"
-              accessibilityLabel="Send message"
-              disabled={!canSend}
-              onPress={sendMessage}
-              style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}>
-              {isSending ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Send size={21} color="#ffffff" fill="#ffffff" />
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+        <AIChatComposer
+          activeMaterial={activeMaterial}
+          activeOptions={activeOptions}
+          bottomPadding={Math.max(12, insets.bottom + 10)}
+          canSend={canSend}
+          createdReviewer={createdReviewer}
+          errorMessage={errorMessage}
+          hasConversation={hasConversation}
+          isSending={isSending}
+          isUploadingMaterial={isUploadingMaterial}
+          message={message}
+          onMessageChange={setMessage}
+          onOpenReviewers={onOpenReviewers}
+          onPickMaterial={pickMaterialFile}
+          onRemoveMaterial={() => setActiveMaterial(null)}
+          onSendMessage={sendMessage}
+          onStepChipPress={handleStepChip}
+        />
       </KeyboardAvoidingView>
 
       <ChatHistoryModal

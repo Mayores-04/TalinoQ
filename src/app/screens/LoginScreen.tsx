@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Text, View } from 'react-native';
 import { ArrowRight, LockKeyhole, Mail, UserRoundPlus } from 'lucide-react-native';
 
 import { AuthShell } from '@/components/auth/AuthShell';
@@ -114,13 +114,8 @@ export function LoginScreen({ onForgotPassword, onRegister, onAuthenticated }: L
   return (
     <AuthShell>
       <Animated.View
-        className="gap-6 py-8"
-        style={[
-          styles.screen,
-          {
-            opacity: entranceOpacity,
-          },
-        ]}>
+        className="w-full gap-6 py-8"
+        style={{ opacity: entranceOpacity }}>
         <View className="items-center gap-3">
           <HorizontalLogo />
 
@@ -199,9 +194,3 @@ export function LoginScreen({ onForgotPassword, onRegister, onAuthenticated }: L
     </AuthShell>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    width: '100%',
-  },
-});

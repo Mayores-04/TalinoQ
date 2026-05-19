@@ -24,5 +24,5 @@ export function GluestackUIProvider({ children, mode = 'light' }: GluestackUIPro
     }
   }, [mode, setColorScheme]);
 
-  return <View className="flex-1 bg-white dark:bg-black">{children}</View>;
+  return <View className="flex-1 bg-tq-page dark:bg-black">{children}</View>;
 }

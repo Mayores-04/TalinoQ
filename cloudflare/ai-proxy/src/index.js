@@ -133,6 +133,7 @@ async function handlePdfExtraction(request) {
   const text = await extractTextFromPdfBytes(pdfBytes);
 
   return jsonResponse({
+    bytes: pdfBytes.byteLength,
     text,
     warning: text
       ? undefined
@@ -175,16 +176,58 @@ async function extractTextFromPdfBytes(bytes) {
 }
 
 async function decodePdfStream(dictionary, bytes) {
-  if (!/\/Filter\s*(?:\/FlateDecode|\[\s*\/FlateDecode)/.test(dictionary)) {
-    return bytes;
+  const filters = getPdfFilters(dictionary);
+  let decoded = bytes;
+
+  if (filters.length === 0) {
+    return decoded;
   }
 
-  try {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  } catch {
-    return null;
+  for (const filter of filters) {
+    try {
+      if (filter === 'ASCIIHexDecode' || filter === 'AHx') {
+        decoded = decodeAsciiHex(latin1FromBytes(decoded));
+        continue;
+      }
+
+      if (filter === 'ASCII85Decode' || filter === 'A85') {
+        decoded = decodeAscii85(latin1FromBytes(decoded));
+        continue;
+      }
+
+      if (filter === 'RunLengthDecode' || filter === 'RL') {
+        decoded = decodeRunLength(decoded);
+        continue;
+      }
+
+      if (filter === 'FlateDecode' || filter === 'Fl') {
+        const stream = new Blob([decoded]).stream().pipeThrough(new DecompressionStream('deflate'));
+        decoded = new Uint8Array(await new Response(stream).arrayBuffer());
+        continue;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
   }
+
+  return decoded;
+}
+
+function getPdfFilters(dictionary) {
+  const filters = [];
+  const arrayMatch = dictionary.match(/\/Filter\s*\[([\s\S]*?)\]/);
+
+  if (arrayMatch) {
+    for (const match of arrayMatch[1].matchAll(/\/([A-Za-z0-9]+)/g)) {
+      filters.push(match[1]);
+    }
+    return filters;
+  }
+
+  const singleMatch = dictionary.match(/\/Filter\s*\/([A-Za-z0-9]+)/);
+  return singleMatch ? [singleMatch[1]] : [];
 }
 
 function extractTextOperators(content, unicodeMap) {
@@ -210,7 +253,151 @@ function extractTextOperators(content, unicodeMap) {
     chunks.push(decodePdfHex(match[1], unicodeMap));
   }
 
+  for (const match of content.matchAll(/\((?:\\.|[^\\)])*\)\s*'/g)) {
+    chunks.push(decodePdfLiteral(match[0].replace(/\s*'$/, '')));
+  }
+
+  for (const match of content.matchAll(/[-+]?\d*\.?\d+\s+[-+]?\d*\.?\d+\s+(\((?:\\.|[^\\)])*\))\s*"/g)) {
+    chunks.push(decodePdfLiteral(match[1]));
+  }
+
+  if (chunks.length === 0) {
+    chunks.push(...extractReadableFallbackText(content));
+  }
+
   return chunks.join(' ');
+}
+
+function extractReadableFallbackText(content) {
+  const chunks = [];
+
+  for (const block of content.matchAll(/BT([\s\S]*?)ET/g)) {
+    const textBlock = block[1] ?? '';
+    for (const literal of textBlock.matchAll(/\((?:\\.|[^\\)]){3,}\)/g)) {
+      const text = decodePdfLiteral(literal[0]);
+      if (looksReadableText(text)) {
+        chunks.push(text);
+      }
+    }
+  }
+
+  return chunks;
+}
+
+function looksReadableText(value) {
+  const cleaned = value.replace(/\s+/g, ' ').trim();
+  if (cleaned.length < 3) {
+    return false;
+  }
+
+  const letters = cleaned.match(/[A-Za-z]/g)?.length ?? 0;
+  return letters / cleaned.length >= 0.35;
+}
+
+function decodeAsciiHex(value) {
+  let hex = '';
+
+  for (const char of value) {
+    if (char === '>') {
+      break;
+    }
+    if (/[0-9A-Fa-f]/.test(char)) {
+      hex += char;
+    }
+  }
+
+  if (hex.length % 2 === 1) {
+    hex += '0';
+  }
+
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < hex.length; index += 2) {
+    bytes[index / 2] = parseInt(hex.slice(index, index + 2), 16);
+  }
+  return bytes;
+}
+
+function decodeAscii85(value) {
+  const cleaned = value
+    .replace(/^<~/, '')
+    .replace(/~>[\s\S]*$/, '')
+    .replace(/\s+/g, '');
+  const output = [];
+  let group = [];
+
+  for (const char of cleaned) {
+    if (char === 'z' && group.length === 0) {
+      output.push(0, 0, 0, 0);
+      continue;
+    }
+
+    const code = char.charCodeAt(0);
+    if (code < 33 || code > 117) {
+      continue;
+    }
+
+    group.push(code - 33);
+
+    if (group.length === 5) {
+      writeAscii85Group(group, output, 4);
+      group = [];
+    }
+  }
+
+  if (group.length > 0) {
+    const usefulBytes = group.length - 1;
+    while (group.length < 5) {
+      group.push(84);
+    }
+    writeAscii85Group(group, output, usefulBytes);
+  }
+
+  return new Uint8Array(output);
+}
+
+function writeAscii85Group(group, output, byteCount) {
+  let value = 0;
+  for (const digit of group) {
+    value = value * 85 + digit;
+  }
+
+  const bytes = [
+    (value >>> 24) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 8) & 0xff,
+    value & 0xff,
+  ];
+
+  output.push(...bytes.slice(0, byteCount));
+}
+
+function decodeRunLength(bytes) {
+  const output = [];
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    const length = bytes[index];
+    if (length === 128) {
+      break;
+    }
+
+    if (length <= 127) {
+      const count = length + 1;
+      for (let offset = 0; offset < count && index + 1 + offset < bytes.length; offset += 1) {
+        output.push(bytes[index + 1 + offset]);
+      }
+      index += count;
+      continue;
+    }
+
+    const count = 257 - length;
+    const value = bytes[index + 1];
+    for (let offset = 0; offset < count; offset += 1) {
+      output.push(value);
+    }
+    index += 1;
+  }
+
+  return new Uint8Array(output);
 }
 
 function buildUnicodeMap(decodedStreams) {

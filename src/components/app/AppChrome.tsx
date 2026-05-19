@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Image,
+  Keyboard,
   Modal,
   PanResponder,
   Pressable,
@@ -14,10 +15,12 @@ import { Bell, Settings, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AuthRoute } from '@/app/screens/AuthFlow';
 import { AppBottomNav } from '@/components/app/AppBottomNav';
-import { NotificationsPanel } from '@/components/app/NotificationsPanel';
+import { APP_PAGE_BACKGROUND } from '@/styles/appTheme';
+import { NotificationsPanel } from './NotificationsPanel';
+import { useLiveNotifications } from '@/hooks/useLiveNotifications';
 
 type AppChromeProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   currentRoute: AuthRoute;
   hideHeader?: boolean;
   onNavigate: (route: AuthRoute) => void;
@@ -33,15 +36,31 @@ const bottomNavRoutes: AuthRoute[] = [
   'settings',
   'profile',
 ];
-const SHEET_CLOSE_DISTANCE = 420;
+const SHEET_CLOSE_DISTANCE = 800;
 const SHEET_CLOSE_THRESHOLD = SHEET_CLOSE_DISTANCE * 0.42;
 
 export function AppChrome({ children, currentRoute, hideHeader, onNavigate }: AppChromeProps) {
   const insets = useSafeAreaInsets();
   const [panelMode, setPanelMode] = useState<PanelMode>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const showHeader = headerRoutes.includes(currentRoute) && !hideHeader;
-  const showBottomNav = bottomNavRoutes.includes(currentRoute);
+  const showBottomNav = bottomNavRoutes.includes(currentRoute) && !keyboardVisible;
+  const { unreadCount } = useLiveNotifications();
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const openNotifications = () => {
     sheetTranslateY.setValue(0);
@@ -119,7 +138,12 @@ export function AppChrome({ children, currentRoute, hideHeader, onNavigate }: Ap
             <View style={styles.actionGroup}>
               <ChromeActionButton
                 label="Notifications"
-                icon={<Bell size={18} color="#0f172a" />}
+                icon={
+                  <View style={styles.bellWrap}>
+                    <Bell size={18} color="#0f172a" />
+                    {unreadCount > 0 ? <View style={styles.bellDot} /> : null}
+                  </View>
+                }
                 onPress={openNotifications}
               />
               <ChromeActionButton
@@ -169,7 +193,16 @@ export function AppChrome({ children, currentRoute, hideHeader, onNavigate }: Ap
             </TouchableOpacity>
           </View>
 
-          {panelMode === 'notifications' ? <NotificationsPanel /> : null}
+          <View style={styles.sheetBody}>
+            {panelMode === 'notifications' ? (
+              <NotificationsPanel
+                onOpenRoute={(route: AuthRoute) => {
+                  closePanel();
+                  onNavigate(route);
+                }}
+              />
+            ) : null}
+          </View>
         </Animated.View>
       </Modal>
     </View>
@@ -200,12 +233,12 @@ function ChromeActionButton({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: APP_PAGE_BACKGROUND,
   },
   headerWrap: {
     paddingHorizontal: 8,
-    paddingBottom: 10,
-    backgroundColor: '#f8fafc',
+    paddingBottom: 5,
+    backgroundColor: APP_PAGE_BACKGROUND,
   },
   header: {
     flexDirection: 'row',
@@ -215,7 +248,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.18)',
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    backgroundColor: 'rgb(255, 255, 255)',
     paddingRight: 14,
     paddingVertical: 12,
     shadowColor: '#0f172a',
@@ -280,6 +313,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(15, 23, 42, 0.06)',
   },
+  bellWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  bellDot: {
+    backgroundColor: '#ef4444',
+    borderColor: '#ffffff',
+    borderRadius: 999,
+    borderWidth: 1.5,
+    height: 10,
+    position: 'absolute',
+    right: -2,
+    top: -4,
+    width: 10,
+  },
   content: {
     flex: 1,
   },
@@ -289,11 +338,17 @@ const styles = StyleSheet.create({
   },
   sheet: {
     marginTop: 'auto',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    // borderTopLeftRadius: 28,
+    // borderTopRightRadius: 28,
     backgroundColor: '#ffffff',
     paddingHorizontal: 16,
     paddingTop: 10,
+    height: '100%',
+    maxHeight: '100%',
+  },
+  sheetBody: {
+    flex: 1,
+    minHeight: 0,
   },
   sheetHandleWrap: {
     alignItems: 'center',

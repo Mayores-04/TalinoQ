@@ -50,6 +50,11 @@ import {
   getCategorySuggestions,
   getSubjectSuggestions,
 } from '@/lib/studyAnalytics';
+import {
+  APP_FLOW_BOTTOM_PADDING,
+  APP_PAGE_BACKGROUND,
+  APP_PAGE_HORIZONTAL_PADDING,
+} from '@/styles/appTheme';
 
 type CreateReviewerFlowProps = {
   onBack: () => void;
@@ -1245,17 +1250,17 @@ function TopicRow({ title, subtitle }: { title: string; subtitle: string }) {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: APP_PAGE_BACKGROUND,
     flex: 1,
   },
   flowHeader: {
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: APP_PAGE_BACKGROUND,
     borderBottomColor: '#e2e8f0',
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     paddingVertical: 12,
   },
   flowBackButton: {
@@ -1286,8 +1291,9 @@ const styles = StyleSheet.create({
     width: 42,
   },
   setupContent: {
-    padding: 18,
-    paddingBottom: 28,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_FLOW_BOTTOM_PADDING,
   },
   setupTitle: {
     color: '#172033',
@@ -1591,8 +1597,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   extractionContent: {
-    padding: 18,
-    paddingBottom: 28,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_FLOW_BOTTOM_PADDING,
   },
   scanHero: {
     alignItems: 'center',
@@ -1727,8 +1734,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   questionContent: {
-    padding: 18,
-    paddingBottom: 28,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_FLOW_BOTTOM_PADDING,
   },
   aiHeroIcon: {
     alignItems: 'center',
@@ -1924,8 +1932,9 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
   },
   exportContent: {
-    padding: 18,
-    paddingBottom: 28,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_FLOW_BOTTOM_PADDING,
   },
   exportPanel: {
     backgroundColor: '#f2fbfb',
@@ -2088,8 +2097,9 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   detailContent: {
-    padding: 18,
-    paddingBottom: 28,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_FLOW_BOTTOM_PADDING,
   },
   detailEyebrow: {
     color: '#008c84',

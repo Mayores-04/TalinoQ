@@ -32,8 +32,20 @@ import {
   type ReviewerRecord,
 } from '@/lib/reviewers';
 import { subscribeToNetworkStatus } from '@/lib/networkService';
+import { notifyNotificationRead } from '@/hooks/useLiveNotifications';
+import {
+  APP_PAGE_BACKGROUND,
+  APP_PAGE_BOTTOM_NAV_PADDING,
+  APP_PAGE_HORIZONTAL_PADDING,
+} from '@/styles/appTheme';
 
-export type ReviewerStudyMode = 'quiz' | 'flashcards' | 'typed' | 'enumeration' | 'essay' | 'review';
+export type ReviewerStudyMode =
+  | 'quiz'
+  | 'flashcards'
+  | 'typed'
+  | 'enumeration'
+  | 'essay'
+  | 'review';
 
 type AnswerResult = {
   mode: ReviewerStudyMode;
@@ -92,6 +104,11 @@ export function ReviewerStudyPage({
   const [online, setOnline] = useState(true);
 
   useEffect(() => subscribeToNetworkStatus(setOnline), []);
+
+  // Mark reviewer notification as read when this page is opened
+  useEffect(() => {
+    void notifyNotificationRead(`reviewer-${reviewer.id}`);
+  }, [reviewer.id]);
 
   const activeQuestions = useMemo(
     () =>
@@ -282,7 +299,9 @@ export function ReviewerStudyPage({
         response: nextKnownCards[question.id] ? 'Known' : 'Needs review',
         score: nextKnownCards[question.id] ? 100 : 0,
       }));
-      const keyedResults = Object.fromEntries(cardResults.map((result) => [result.question.id, result]));
+      const keyedResults = Object.fromEntries(
+        cardResults.map((result) => [result.question.id, result])
+      );
       setAnswerResults(keyedResults);
       await completeSession(keyedResults, 'flashcards');
       return;
@@ -306,7 +325,9 @@ export function ReviewerStudyPage({
 
     setAnswerResults({});
     setSessionQuestionIds(
-      questions.filter((question) => weakQuestionIds.has(question.id)).map((question) => question.id)
+      questions
+        .filter((question) => weakQuestionIds.has(question.id))
+        .map((question) => question.id)
     );
     setCurrentIndex(0);
     setMode('quiz');
@@ -333,7 +354,7 @@ export function ReviewerStudyPage({
       : 0;
 
   return (
-    <SafeAreaView edges={[]} style={styles.safeArea}>
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.header}>
         <TouchableOpacity activeOpacity={0.8} onPress={onBack} style={styles.iconButton}>
           <ChevronLeft size={21} color="#004f4c" />
@@ -346,7 +367,7 @@ export function ReviewerStudyPage({
             {reviewer.title}
           </Text>
         </View>
-        <View style={styles.iconButton}>
+        <View style={styles.headerSpacer}>
           {savingProgress ? <ActivityIndicator color="#004f4c" size="small" /> : null}
         </View>
       </View>
@@ -364,9 +385,10 @@ export function ReviewerStudyPage({
       ) : null}
 
       {mode !== 'review' ? (
-        <>
+        <View style={styles.studyControls}>
           <ScrollView
             horizontal
+            style={styles.modeScroll}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.modeRow}>
             {modeTabs.map((tab) => {
@@ -379,7 +401,12 @@ export function ReviewerStudyPage({
                   onPress={() => switchMode(tab.mode)}
                   style={[styles.modeChip, active && styles.modeChipActive]}>
                   <Icon size={15} color={active ? '#ffffff' : '#004f4c'} />
-                  <Text style={[styles.modeText, active && styles.modeTextActive]}>{tab.label}</Text>
+                  <Text
+                    allowFontScaling={false}
+                    numberOfLines={1}
+                    style={[styles.modeText, active && styles.modeTextActive]}>
+                    {tab.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -395,7 +422,7 @@ export function ReviewerStudyPage({
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${progressPercent}%` as `${number}%` }]} />
           </View>
-        </>
+        </View>
       ) : null}
 
       {mode === 'review' ? (
@@ -588,7 +615,10 @@ function EnumerationCard({
         activeOpacity={0.88}
         disabled={answers.every((item) => !item.trim())}
         onPress={onSubmit}
-        style={[styles.primaryButton, answers.every((item) => !item.trim()) && styles.disabledButton]}>
+        style={[
+          styles.primaryButton,
+          answers.every((item) => !item.trim()) && styles.disabledButton,
+        ]}>
         <Text style={styles.primaryButtonText}>Validate List</Text>
       </TouchableOpacity>
     </View>
@@ -621,7 +651,10 @@ function EssayCard({
       />
       <View style={styles.essayFooter}>
         <Text style={styles.characterCount}>{answer.length} / 2000 chars</Text>
-        <TouchableOpacity activeOpacity={0.88} onPress={onSubmit} style={styles.primaryButtonInline}>
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={onSubmit}
+          style={styles.primaryButtonInline}>
           <Text style={styles.primaryButtonText}>Submit Essay</Text>
         </TouchableOpacity>
       </View>
@@ -640,27 +673,48 @@ function FlashcardView({
   onMark: (known: boolean) => void;
   question: ReviewerQuestion;
 }) {
+  const front = getFlashcardFront(question);
+  const back = getFlashcardBack(question);
+
   return (
     <View>
       <TouchableOpacity activeOpacity={0.9} onPress={onFlip} style={styles.flashcard}>
-        <Text style={styles.flashcardSparkle}>*</Text>
-        <Text style={styles.flashcardTitle}>{flipped ? getCorrectAnswer(question) : question.concept}</Text>
+        <View style={styles.flashcardTopRow}>
+          <Text style={styles.flashcardSideLabel}>{flipped ? 'Answer' : 'Prompt'}</Text>
+          <Text style={styles.flashcardSparkle}>*</Text>
+        </View>
+        <View style={styles.flashcardBody}>
+          <Text style={flipped ? styles.flashcardAnswer : styles.flashcardTitle}>
+            {flipped ? back.answer : front}
+          </Text>
+          {flipped ? <Text style={styles.flashcardExplanation}>{back.explanation}</Text> : null}
+        </View>
         <Text style={styles.flashcardSubtitle}>
-          {flipped ? question.explanation : 'Tap to flip'}
+          {flipped ? 'Tap to see the prompt again' : 'Tap to reveal the answer'}
         </Text>
       </TouchableOpacity>
       <View style={styles.flashcardActions}>
         <TouchableOpacity
           activeOpacity={0.86}
+          disabled={!flipped}
           onPress={() => onMark(false)}
-          style={[styles.cardActionButton, styles.needReviewButton]}>
+          style={[
+            styles.cardActionButton,
+            styles.needReviewButton,
+            !flipped && styles.cardActionButtonDisabled,
+          ]}>
           <RotateCcw size={16} color="#ef4444" />
           <Text style={styles.needReviewText}>Need Review</Text>
         </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.86}
+          disabled={!flipped}
           onPress={() => onMark(true)}
-          style={[styles.cardActionButton, styles.knownButton]}>
+          style={[
+            styles.cardActionButton,
+            styles.knownButton,
+            !flipped && styles.cardActionButtonDisabled,
+          ]}>
           <CheckCircle2 size={16} color="#00a56a" />
           <Text style={styles.knownText}>Known</Text>
         </TouchableOpacity>
@@ -795,6 +849,19 @@ function getCorrectAnswer(question: ReviewerQuestion) {
   );
 }
 
+function getFlashcardFront(question: ReviewerQuestion) {
+  return question.concept && question.concept !== 'Core concept'
+    ? question.concept
+    : question.prompt;
+}
+
+function getFlashcardBack(question: ReviewerQuestion) {
+  return {
+    answer: getCorrectAnswer(question),
+    explanation: question.explanation,
+  };
+}
+
 function getEnumerationAnswers(question: ReviewerQuestion) {
   const correctOptions = question.options
     .filter((option) => option.isCorrect)
@@ -870,7 +937,11 @@ function extractKeywords(value: string) {
 
 function scoreEssay(answer: string, question: ReviewerQuestion) {
   const wordCount = normalizeAnswer(answer).split(' ').filter(Boolean).length;
-  const keywords = [question.concept, getCorrectAnswer(question), ...extractKeywords(question.explanation)];
+  const keywords = [
+    question.concept,
+    getCorrectAnswer(question),
+    ...extractKeywords(question.explanation),
+  ];
   const matchedKeywords = keywords.filter((keyword) =>
     normalizeAnswer(answer).includes(normalizeAnswer(keyword))
   ).length;
@@ -881,31 +952,41 @@ function scoreEssay(answer: string, question: ReviewerQuestion) {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#f7f9ff',
+    backgroundColor: APP_PAGE_BACKGROUND,
     flex: 1,
   },
   header: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_PAGE_BACKGROUND,
     borderBottomColor: '#e2e8f0',
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     paddingVertical: 12,
   },
   iconButton: {
     alignItems: 'center',
-    height: 40,
+    backgroundColor: '#eefafa',
+    borderColor: '#ccefed',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 42,
     justifyContent: 'center',
-    width: 40,
+    width: 42,
+  },
+  headerSpacer: {
+    alignItems: 'center',
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
   },
   headerCenter: {
     flex: 1,
   },
   brand: {
     color: '#004f4c',
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '900',
     textAlign: 'center',
   },
@@ -940,10 +1021,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
+  studyControls: {
+    backgroundColor: APP_PAGE_BACKGROUND,
+    borderBottomColor: '#e7eef6',
+    borderBottomWidth: 1,
+    elevation: 3,
+    paddingBottom: 14,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    zIndex: 10,
+  },
+  modeScroll: {
+    flexGrow: 0,
+    maxHeight: 76,
+  },
   modeRow: {
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingTop: 14,
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 72,
+    paddingBottom: 8,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 12,
   },
   modeChip: {
     alignItems: 'center',
@@ -951,8 +1051,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     flexDirection: 'row',
     gap: 6,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
+    height: 48,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    width: 104,
   },
   modeChipActive: {
     backgroundColor: '#004f4c',
@@ -961,6 +1064,8 @@ const styles = StyleSheet.create({
     color: '#004f4c',
     fontSize: 12,
     fontWeight: '900',
+    maxWidth: 66,
+    textAlign: 'center',
   },
   modeTextActive: {
     color: '#ffffff',
@@ -968,7 +1073,7 @@ const styles = StyleSheet.create({
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     paddingTop: 16,
   },
   progressLabel: {
@@ -980,7 +1085,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#dbeafe',
     borderRadius: 999,
     height: 6,
-    marginHorizontal: 18,
+    marginHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     marginTop: 8,
     overflow: 'hidden',
   },
@@ -990,8 +1095,9 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   content: {
-    padding: 18,
-    paddingBottom: 120,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingBottom: APP_PAGE_BOTTOM_NAV_PADDING,
+    paddingTop: 22,
   },
   questionCard: {
     backgroundColor: '#ffffff',
@@ -1203,29 +1309,58 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   flashcard: {
-    alignItems: 'center',
     backgroundColor: '#ffffff',
     borderColor: '#dce8f1',
     borderRadius: 18,
     borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 360,
-    padding: 28,
+    minHeight: 420,
+    padding: 24,
     shadowColor: '#002b3a',
     shadowOpacity: 0.08,
     shadowRadius: 16,
   },
+  flashcardTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  flashcardSideLabel: {
+    color: '#007a80',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
   flashcardSparkle: {
-    alignSelf: 'flex-end',
     color: '#a4b4c8',
     fontSize: 20,
   },
+  flashcardBody: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 26,
+  },
   flashcardTitle: {
     color: '#004f4c',
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '900',
-    lineHeight: 36,
-    marginTop: 70,
+    lineHeight: 34,
+    textAlign: 'center',
+  },
+  flashcardAnswer: {
+    color: '#0f172a',
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 29,
+    textAlign: 'center',
+  },
+  flashcardExplanation: {
+    color: '#64748b',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 20,
+    marginTop: 18,
     textAlign: 'center',
   },
   flashcardSubtitle: {
@@ -1233,7 +1368,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 20,
-    marginTop: 90,
     textAlign: 'center',
   },
   flashcardActions: {
@@ -1249,6 +1383,9 @@ const styles = StyleSheet.create({
     gap: 8,
     justifyContent: 'center',
     minHeight: 52,
+  },
+  cardActionButtonDisabled: {
+    opacity: 0.45,
   },
   needReviewButton: {
     backgroundColor: '#ffe7e7',
@@ -1267,8 +1404,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   resultsContent: {
-    padding: 18,
-    paddingBottom: 120,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: 18,
+    paddingBottom: APP_PAGE_BOTTOM_NAV_PADDING,
   },
   scoreCard: {
     alignItems: 'center',

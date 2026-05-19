@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { ArrowRight, LockKeyhole, Mail, ShieldCheck, User } from 'lucide-react-native';
 
 import { AuthShell } from '@/components/auth/AuthShell';
@@ -93,7 +93,7 @@ export function RegisterScreen({ onLogin, onAuthenticated }: RegisterScreenProps
 
   return (
     <AuthShell centerContent={false}>
-      <View className="gap-5 py-8" style={styles.screen}>
+      <View className="w-full gap-5 py-8">
         <View className="items-center">
           <BrandLogo compact showMascot={false} />
         </View>
@@ -217,9 +217,3 @@ export function RegisterScreen({ onLogin, onAuthenticated }: RegisterScreenProps
     </AuthShell>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: {
-    width: '100%',
-  },
-});

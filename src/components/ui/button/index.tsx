@@ -34,17 +34,17 @@ const buttonSize: Record<ButtonSize, string> = {
 };
 const buttonVariant: Record<ButtonVariant, Record<ButtonAction, string>> = {
   solid: {
-    primary: 'bg-teal-900 active:bg-teal-950 shadow-md shadow-teal-950/20',
-    secondary: 'bg-white border border-slate-200 active:bg-slate-50',
-    positive: 'bg-emerald-400 active:bg-emerald-500',
+    primary: 'bg-tq-primary active:bg-tq-primaryPressed shadow-md shadow-tq-primary/20',
+    secondary: 'border border-tq-line bg-tq-surface active:bg-tq-page',
+    positive: 'bg-tq-green active:bg-emerald-500',
   },
   outline: {
-    primary: 'bg-white border border-slate-200 active:bg-teal-50',
-    secondary: 'bg-white border border-slate-200 active:bg-slate-50',
-    positive: 'bg-white border border-emerald-300 active:bg-emerald-50',
+    primary: 'border border-tq-line bg-tq-surface active:bg-tq-primarySoft',
+    secondary: 'border border-tq-line bg-tq-surface active:bg-tq-page',
+    positive: 'border border-emerald-300 bg-tq-surface active:bg-emerald-50',
   },
   ghost: {
-    primary: 'bg-transparent active:bg-teal-50',
+    primary: 'bg-transparent active:bg-tq-primarySoft',
     secondary: 'bg-transparent active:bg-slate-100',
     positive: 'bg-transparent active:bg-emerald-50',
   },
@@ -103,8 +103,8 @@ export const ButtonText = React.forwardRef<Text, ButtonTextProps>(
   ({ className = '', ...props }, ref) => {
     const { action, variant, size } = useContext(ButtonContext);
     const sizeClass = size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-base' : 'text-sm';
-    const solidText = action === 'secondary' ? 'text-teal-950' : 'text-white';
-    const tonedText = action === 'positive' ? 'text-emerald-700' : 'text-teal-900';
+    const solidText = action === 'secondary' ? 'text-tq-primary' : 'text-white';
+    const tonedText = action === 'positive' ? 'text-emerald-700' : 'text-tq-primary';
     const textColor = variant === 'solid' ? solidText : tonedText;
 
     return (

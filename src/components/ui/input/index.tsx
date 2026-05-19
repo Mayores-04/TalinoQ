@@ -45,7 +45,7 @@ export const Input = React.forwardRef<View, InputProps>(
       <InputContext.Provider value={{ isDisabled, size }}>
         <View
           ref={ref}
-          className={`flex-row items-center border bg-slate-50 ${inputSize[size]} ${shape} ${state} ${
+          className={`flex-row items-center border bg-tq-page ${inputSize[size]} ${shape} ${state} ${
             isDisabled ? 'opacity-50' : ''
           } ${className}`}
           {...props}
@@ -72,7 +72,7 @@ export const InputField = React.forwardRef<TextInput, InputFieldProps>(
         editable={editable ?? !isDisabled}
         multiline={false}
         placeholderTextColor={placeholderTextColor}
-        className={`flex-1 px-3 py-2 text-slate-800 ${textSize} ${className}`}
+        className={`flex-1 px-3 py-2 text-tq-ink ${textSize} ${className}`}
         {...props}
       />
     );

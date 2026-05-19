@@ -1,8 +1,14 @@
 import { StyleSheet } from 'react-native';
+import {
+  APP_PAGE_BACKGROUND,
+  APP_PAGE_HORIZONTAL_PADDING,
+  APP_PAGE_TOP_PADDING,
+  APP_SURFACE,
+} from '@/styles/appTheme';
 
 export const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#f6fbff',
+    backgroundColor: APP_PAGE_BACKGROUND,
     flex: 1,
   },
   keyboardArea: {
@@ -10,12 +16,12 @@ export const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_SURFACE,
     borderBottomColor: '#dbe8ee',
     borderBottomWidth: 1,
     flexDirection: 'row',
     gap: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     paddingVertical: 12,
   },
   headerButton: {
@@ -118,8 +124,8 @@ export const styles = StyleSheet.create({
   },
   chatContent: {
     flexGrow: 1,
-    paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
+    paddingTop: APP_PAGE_TOP_PADDING,
   },
   loadingHistoryCard: {
     alignItems: 'center',
@@ -258,6 +264,35 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 6,
   },
+  userMetaRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  userEditActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  userEditButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#dbe8ee',
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: 'center',
+    width: 24,
+  },
+  userEditInput: {
+    color: '#ffffff',
+    fontSize: 14,
+    lineHeight: 21,
+    maxHeight: 120,
+    minWidth: 120,
+    padding: 0,
+  },
   typingBubble: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
@@ -276,12 +311,12 @@ export const styles = StyleSheet.create({
     fontWeight: '900',
   },
   composerWrap: {
-    backgroundColor: '#ffffff',
+    backgroundColor: APP_SURFACE,
     borderTopColor: '#dbe8ee',
     borderTopWidth: 1,
     bottom: 0,
     left: 0,
-    paddingHorizontal: 14,
+    paddingHorizontal: APP_PAGE_HORIZONTAL_PADDING,
     paddingTop: 10,
     position: 'absolute',
     right: 0,

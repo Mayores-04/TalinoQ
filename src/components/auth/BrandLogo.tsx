@@ -1,4 +1,4 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 
 type BrandLogoProps = {
   compact?: boolean;
@@ -19,7 +19,6 @@ export function BrandLogo({ compact = false, showMascot = true }: BrandLogoProps
             source={require('../../../assets/LightModeAppLogo.png')}
             className={compact ? 'h-14 w-14' : 'h-28 w-28'}
             resizeMode="contain"
-            style={compact ? styles.compactMascot : styles.mascot}
           />
         </View>
       ) : null}
@@ -37,34 +36,12 @@ export function BrandLogo({ compact = false, showMascot = true }: BrandLogoProps
 
 export function HorizontalLogo() {
   return (
-    <View style={styles.lockupFrame}>
+    <View className="h-[58px] w-[72px] items-center justify-center bg-tq-surface">
       <Image
         source={require('../../../assets/LightModeHorizontalLockupLogo.png')}
+        className="h-[54px] w-[82px]"
         resizeMode="contain"
-        style={styles.lockup}
       />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  compactMascot: {
-    height: 56,
-    width: 56,
-  },
-  lockup: {
-    height: 54,
-    width: 82,
-  },
-  lockupFrame: {
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    height: 58,
-    justifyContent: 'center',
-    width: 72,
-  },
-  mascot: {
-    height: 118,
-    width: 118,
-  },
-});

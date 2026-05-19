@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Alert,
   RefreshControl,
-  ScrollView,
   Switch,
   Text,
   TouchableOpacity,
@@ -11,7 +10,6 @@ import {
 import {
   Bell,
   Bot,
-  ChevronRight,
   Cloud,
   Database,
   HelpCircle,
@@ -21,12 +19,11 @@ import {
   Sparkles,
   User,
 } from 'lucide-react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import type { UserProfile } from '@/lib/firebase';
-import { LoadingSkeleton } from '@/components/app/LoadingSkeleton';
 import { useAiChatDragReminderPreference } from '@/lib/preferences';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
-import { useSkeletonLoading } from '@/hooks/useSkeletonLoading';
+import { AppScreen } from '@/components/layout/AppScreen';
+import { TqDivider, TqListRow, TqSection } from '@/components/ui/talinoq';
 
 type SettingsPageProps = {
   userProfile?: UserProfile | null;
@@ -46,27 +43,25 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
   const email = userProfile?.email ?? 'Account details loading';
   const plan = userProfile?.plan ?? 'Free Plan';
   const [dragReminderEnabled, setDragReminderEnabled] = useAiChatDragReminderPreference();
-  const initialLoading = useSkeletonLoading();
   const { refreshing, refresh } = usePullToRefresh();
-  const isLoading = initialLoading || refreshing;
   const showInfo = (title: string, message: string) => {
     Alert.alert(title, message);
   };
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-slate-50">
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-5 pt-2 pb-28"
-        refreshControl={
+    <AppScreen
+      edges={['top']}
+      scroll
+      scrollProps={{
+        refreshControl: (
           <RefreshControl
             refreshing={refreshing}
             onRefresh={refresh}
             tintColor="#172554"
             colors={['#172554']}
           />
-        }
-        showsVerticalScrollIndicator={false}>
+        ),
+      }}>
         <View className="pt-4">
           <Text className="text-3xl font-black tracking-[-0.5px] text-blue-950">Settings</Text>
           <Text className="mt-2 max-w-[290px] text-sm leading-5 text-slate-600">
@@ -74,37 +69,29 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
           </Text>
         </View>
 
-        <SettingsSection title="ACCOUNT" className="mt-7">
-          {isLoading ? (
-            <SettingsRowSkeleton />
-          ) : (
-            <SettingsRow
-              icon={<User size={17} color="#4338ca" />}
-              iconClassName="bg-indigo-100"
-              title={displayName}
-              subtitle={email}
-              onPress={onOpenProfile}
-            />
-          )}
+        <TqSection title="ACCOUNT" className="mt-7">
+          <TqListRow
+            icon={<User size={17} color="#4338ca" />}
+            iconClassName="bg-indigo-100"
+            title={displayName}
+            subtitle={email}
+            onPress={onOpenProfile}
+          />
 
-          <Divider />
+          <TqDivider />
 
-          {isLoading ? (
-            <SettingsRowSkeleton />
-          ) : (
-            <SettingsRow
-              icon={<Bot size={17} color="#0891b2" />}
-              iconClassName="bg-cyan-100"
-              title="Subscription"
-              subtitle={`${plan} Active`}
-              subtitleClassName="text-cyan-700"
-              onPress={onOpenProfile}
-            />
-          )}
-        </SettingsSection>
+          <TqListRow
+            icon={<Bot size={17} color="#0891b2" />}
+            iconClassName="bg-cyan-100"
+            title="Subscription"
+            subtitle={`${plan} Active`}
+            subtitleClassName="text-cyan-700"
+            onPress={onOpenProfile}
+          />
+        </TqSection>
 
-        <SettingsSection title="PREFERENCES" className="mt-5">
-          <SettingsRow
+        <TqSection title="PREFERENCES" className="mt-5">
+          <TqListRow
             icon={<Cloud size={17} color="#172554" />}
             iconClassName="bg-blue-50"
             title="Sync & Cloud"
@@ -114,9 +101,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             }
           />
 
-          <Divider />
+          <TqDivider />
 
-          <SettingsRow
+          <TqListRow
             icon={<Bell size={17} color="#172554" />}
             iconClassName="bg-blue-50"
             title="Notifications"
@@ -125,7 +112,7 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             }
           />
 
-          <Divider />
+          <TqDivider />
 
           <View className="flex-row items-center px-4 py-4">
             <View className="mr-3 h-9 w-9 items-center justify-center rounded-full bg-cyan-100">
@@ -142,7 +129,7 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             <Switch value={dragReminderEnabled} onValueChange={setDragReminderEnabled} />
           </View>
 
-          <Divider />
+          <TqDivider />
 
           <View className="flex-row items-center px-4 py-4">
             <View className="mr-3 h-9 w-9 items-center justify-center rounded-full bg-blue-50">
@@ -178,9 +165,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             </View>
           </View>
 
-          <Divider />
+          <TqDivider />
 
-          <SettingsRow
+          <TqListRow
             icon={<Database size={17} color="#172554" />}
             iconClassName="bg-blue-50"
             title="Offline Storage"
@@ -189,10 +176,10 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
               showInfo('Offline Storage', 'TalinoQ keeps a local cache for material drafts and sync recovery.')
             }
           />
-        </SettingsSection>
+        </TqSection>
 
-        <SettingsSection title="INFORMATION" className="mt-5">
-          <SettingsRow
+        <TqSection title="INFORMATION" className="mt-5">
+          <TqListRow
             icon={<Info size={17} color="#172554" />}
             iconClassName="bg-blue-50"
             title="About TalinoQ"
@@ -202,9 +189,9 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             }
           />
 
-          <Divider />
+          <TqDivider />
 
-          <SettingsRow
+          <TqListRow
             icon={<HelpCircle size={17} color="#172554" />}
             iconClassName="bg-blue-50"
             title="Help & FAQ"
@@ -212,7 +199,7 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
               showInfo('Help & FAQ', 'Create a library, upload materials, then generate reviewers or ask TalinoQ AI for help.')
             }
           />
-        </SettingsSection>
+        </TqSection>
 
         <TouchableOpacity
           activeOpacity={0.85}
@@ -249,83 +236,6 @@ export function SettingsPage({ userProfile, onOpenProfile, onSignOut }: Settings
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+    </AppScreen>
   );
-}
-
-function SettingsSection({
-  title,
-  children,
-  className = '',
-}: {
-  title: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <View className={className}>
-      <Text className="mb-2 px-4 text-xs font-black tracking-[0.8px] text-blue-950">{title}</Text>
-      <View className="overflow-hidden rounded-2xl bg-white shadow-sm">{children}</View>
-    </View>
-  );
-}
-
-function SettingsRow({
-  icon,
-  iconClassName,
-  title,
-  subtitle,
-  subtitleClassName = 'text-slate-500',
-  rightText,
-  onPress,
-}: {
-  icon: React.ReactNode;
-  iconClassName?: string;
-  title: string;
-  subtitle?: string;
-  subtitleClassName?: string;
-  rightText?: string;
-  onPress?: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.75}
-      onPress={onPress}
-      className="flex-row items-center px-4 py-4">
-      <View
-        className={`mr-3 h-9 w-9 items-center justify-center rounded-full ${iconClassName ?? 'bg-slate-100'}`}>
-        {icon}
-      </View>
-
-      <View className="flex-1">
-        <Text className="text-sm font-bold text-slate-800">{title}</Text>
-        {subtitle ? (
-          <Text className={`mt-0.5 text-xs font-medium ${subtitleClassName}`}>{subtitle}</Text>
-        ) : null}
-      </View>
-
-      {rightText ? (
-        <Text className="mr-2 text-xs font-semibold text-slate-500">{rightText}</Text>
-      ) : null}
-      <ChevronRight size={17} color="#94a3b8" />
-    </TouchableOpacity>
-  );
-}
-
-function SettingsRowSkeleton() {
-  return (
-    <View className="flex-row items-center px-4 py-4">
-      <LoadingSkeleton height={36} width={36} radius={999} style={{ marginRight: 12 }} />
-      <View className="flex-1">
-        <LoadingSkeleton height={15} width="48%" radius={7} />
-        <LoadingSkeleton height={12} width="72%" radius={6} style={{ marginTop: 6 }} />
-      </View>
-      <LoadingSkeleton height={17} width={17} radius={8} />
-    </View>
-  );
-}
-
-function Divider() {
-  return <View className="mx-4 h-px bg-slate-200" />;
 }
